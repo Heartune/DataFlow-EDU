@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 两阶段题目生成核心逻辑：Markdown 文本 -> 内容分类分析 -> 题目生成。
-支持按 weight 控制题型分布，按题型与能力层级提供不同 Prompt。
+阶段2 按 weight 构造随机题型序列，每个 pair 从序列按序取槽位指定题型，整体分布符合目标。
 """
 
 import json
@@ -10,7 +10,7 @@ import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import pandas as pd
 from tqdm import tqdm
@@ -127,63 +127,65 @@ def _allocate_by_weight(items: list, num_slots: int, weight_attr: str = "weight"
     return result[:num_slots]
 
 
-def _allocate_questions_by_weight(
+def _build_shuffled_type_sequence(
     question_types: List[QuestionType],
-    num_questions: int,
-) -> List[Tuple[QuestionType, int]]:
+    total_slots: int,
+    seed: int | None = None,
+) -> List[QuestionType]:
     """
-    按 weight 分配各题型数量，确保总和为 num_questions。
-    当 num_questions 较小时，round 可能使低权重题型（如判断题 8%）得到 0；
-    若某题型 weight >= 0.05 却得到 0，会从最「过剩」的题型挪 1 道以保证覆盖。
-    Returns: [(QuestionType, count), ...]，count>0 的题型。
+    按 weight 构造总槽位数的题型序列，随机打乱后返回。
+    用于 2.1 阶段「按题轮转」：每个 pair 从序列中按序取 questions_per_pair 个槽位。
     """
-    if not question_types or num_questions <= 0:
+    if not question_types or total_slots <= 0:
         return []
+    rng = random.Random(seed) if seed is not None else random
     total_weight = sum(q.weight for q in question_types)
     if total_weight <= 0:
         n = len(question_types)
-        base = num_questions // n
-        remainder = num_questions % n
-        return [(q, base + (1 if i < remainder else 0)) for i, q in enumerate(question_types)]
-    allocation: List[Tuple[QuestionType, int]] = []
-    for q in question_types:
-        count = max(0, round(num_questions * q.weight / total_weight))
-        if count > 0:
-            allocation.append((q, count))
-    current_sum = sum(c for _, c in allocation)
-    while current_sum < num_questions:
-        best = max(allocation, key=lambda x: (x[0].weight, -allocation.index(x)))
-        idx = allocation.index(best)
-        allocation[idx] = (best[0], best[1] + 1)
-        current_sum += 1
-    while current_sum > num_questions:
-        worst = min(allocation, key=lambda x: (x[0].weight, allocation.index(x)))
-        idx = allocation.index(worst)
-        if allocation[idx][1] <= 1:
-            allocation.pop(idx)
-        else:
-            allocation[idx] = (worst[0], worst[1] - 1)
-        current_sum -= 1
+        base = total_slots // n
+        remainder = total_slots % n
+        counts = [base + (1 if i < remainder else 0) for i in range(n)]
+    else:
+        counts = [max(0, round(total_slots * q.weight / total_weight)) for q in question_types]
+        current = sum(counts)
+        while current < total_slots:
+            best_i = max(range(len(question_types)), key=lambda i: (question_types[i].weight, -i))
+            counts[best_i] += 1
+            current += 1
+        while current > total_slots:
+            non_zero = [(i, c) for i, c in enumerate(counts) if c > 0]
+            if not non_zero:
+                break
+            worst_i = min(non_zero, key=lambda x: (question_types[x[0]].weight, x[0]))[0]
+            if counts[worst_i] <= 1:
+                counts[worst_i] = 0
+            else:
+                counts[worst_i] -= 1
+            current -= 1
+    sequence: List[QuestionType] = []
+    for q, c in zip(question_types, counts):
+        sequence.extend([q] * c)
+    rng.shuffle(sequence)
+    return sequence[:total_slots]
 
-    # 保证 weight >= 0.05 的题型至少有 1 道（如判断题 8% 在 questions_per_pair=5 时易被 round 为 0）
-    MIN_WEIGHT_FOR_ONE = 0.05
-    allocated_names = {a[0].name for a in allocation}
-    zero_types = [q for q in question_types if q.weight >= MIN_WEIGHT_FOR_ONE and q.name not in allocated_names]
-    for q in sorted(zero_types, key=lambda x: -x.weight):
-        if not allocation:
-            break
-        excess = [(i, a) for i, a in enumerate(allocation) if a[1] > 1]
-        if excess:
-            idx = min(excess, key=lambda x: x[1][0].weight)[0]
-            allocation[idx] = (allocation[idx][0], allocation[idx][1] - 1)
-            if allocation[idx][1] == 0:
-                allocation.pop(idx)
-            allocation.append((q, 1))
-        else:
-            # 每题型均 1 道，用 zero_type 替换权重最小的题型
-            idx = min(range(len(allocation)), key=lambda i: allocation[i][0].weight)
-            allocation[idx] = (q, 1)
-    return [(q, c) for q, c in allocation if c > 0]
+
+def _build_shuffled_ability_sequence(
+    ability_levels: List[AbilityLevelItem],
+    total_slots: int,
+    seed: int | None = None,
+) -> List[AbilityLevelItem | None]:
+    """
+    按 weight 构造总槽位数的能力层级序列，随机打乱后返回。
+    与题型一致：每个 pair 从序列中按序取 questions_per_pair 个槽位。
+    """
+    if total_slots <= 0:
+        return []
+    if not ability_levels:
+        return [None] * total_slots
+    allocated = _allocate_by_weight(ability_levels, total_slots, "weight")
+    rng = random.Random(seed) if seed is not None else random
+    rng.shuffle(allocated)
+    return allocated[:total_slots]
 
 
 def _get_type_specific_instructions(q_type_name: str) -> str:
@@ -439,10 +441,12 @@ def generate_questions(
     question_types: List[QuestionType],
     ability_levels: List[AbilityLevelItem],
     num_questions: int,
+    allocation: Optional[List[Tuple[QuestionType, int]]] = None,
 ) -> List[dict]:
     """
-    阶段2：根据 content、小类、按 weight 分配题型数量，使用题型与能力层级不同的 Prompt 生成题目。
+    阶段2：根据 content、小类、题型分配，使用题型与能力层级不同的 Prompt 生成题目。
     返回题目列表，每题含 question, answer, type, subcategory, ability_level, difficulty, source_page。
+    若 allocation 为 None，退化为使用第一种题型生成 num_questions 道（兼容其他调用）。
     """
     path1, path2, page1, page2 = md_pair
     page_info = f"{page1}-{page2}" if page2 else str(page1)
@@ -451,8 +455,7 @@ def generate_questions(
         return []
 
     sc_str = "、".join(subcategories) if subcategories else "通用"
-    allocation = _allocate_questions_by_weight(question_types, num_questions)
-    if not allocation:
+    if allocation is None or not allocation:
         if question_types:
             allocation = [(question_types[0], num_questions)]
         else:
@@ -496,12 +499,13 @@ def process_page_pair_stage2(
     question_types: List[QuestionType],
     ability_levels: List[AbilityLevelItem],
     num_questions: int,
+    allocation: Optional[List[Tuple[QuestionType, int]]] = None,
 ):
     """阶段2 单对处理。Returns: (questions, page_info)."""
     if not subcategories:
         subcategories = ["通用"]
     questions = generate_questions(
-        pair_data, subcategories, question_types, ability_levels, num_questions
+        pair_data, subcategories, question_types, ability_levels, num_questions, allocation=allocation
     )
     _, _, page1, page2 = pair_data
     page_info = f"{page1}-{page2}" if page2 else str(page1)
@@ -691,6 +695,10 @@ def run_stage2(
     if not pending:
         print("  阶段2 已全部完成")
     else:
+        total_slots = len(indices_to_process) * questions_per_pair
+        type_sequence = _build_shuffled_type_sequence(question_types, total_slots, seed=42)
+        sorted_indices = sorted(indices_to_process)
+        rank_of_idx = {idx: k for k, idx in enumerate(sorted_indices)}
 
         def task(idx: int):
             if idx >= len(page_pairs):
@@ -700,8 +708,17 @@ def run_stage2(
             subcats = info.get("subcategories", [])
             if info.get("failed", False) and not subcats:
                 subcats = ["通用"]
+            rank = rank_of_idx.get(idx, 0)
+            offset = rank * questions_per_pair
+            allocation_slice = type_sequence[offset : offset + questions_per_pair]
+            allocation = [(t, 1) for t in allocation_slice]
             qs, _ = process_page_pair_stage2(
-                pair, subcats, question_types, ability_levels, questions_per_pair
+                pair,
+                subcats,
+                question_types,
+                ability_levels,
+                questions_per_pair,
+                allocation=allocation,
             )
             return idx, qs
 
