@@ -1,0 +1,324 @@
+from __future__ import annotations
+
+import os
+import shutil
+import zipfile
+from pathlib import Path
+from typing import Optional, Tuple
+import webbrowser
+import requests
+import threading
+import time
+
+from dataflow.cli_funcs.utils import _echo
+
+OWNER = "OpenDCAI"
+REPO = "DataFlow-WebUI"
+LATEST_API = f"https://api.github.com/repos/{OWNER}/{REPO}/releases/latest"
+REPO_URL = f"https://github.com/{OWNER}/{REPO}"
+
+
+def _ask_yes(prompt: str, default_no: bool = True) -> bool:
+    suffix = " [y/N]: " if default_no else " [Y/n]: "
+    ans = input(prompt + suffix).strip().lower()
+    if not ans:
+        return not default_no
+    return ans in {"y", "yes"}
+
+
+def _confirm_yes() -> None:
+    _echo(f"This will run DataFlow-WebUI ({REPO_URL}) by using a GitHub Release zip.", "yellow")
+    # if input("Type 'yes' to continue: ").strip().lower() != "yes":
+    # if not _ask_yes("Do you confirm to continue?", default_no=False):
+        # raise SystemExit(0)
+
+
+def _pick_zip(release: dict) -> Tuple[str, str, str]:
+    tag = release.get("tag_name") or "latest"
+    for a in release.get("assets", []):
+        name = a.get("name", "")
+        url = a.get("browser_download_url", "")
+        if name.startswith("DataFlow-WebUI-") and name.endswith(".zip") and url:
+            return tag, name, url
+    raise RuntimeError("No DataFlow-WebUI-*.zip found in latest release.")
+
+
+def _ask_base_dir(default: Path) -> Path:
+    _echo(f"Default download directory: {default}", "cyan")
+    ans = input(f"Download directory [{default}]: ").strip()
+    return (Path(ans).expanduser().resolve() if ans else default.resolve())
+
+def _open_browser(url: str) -> None:
+    try:
+        ok = webbrowser.open(url, new=2)  # new=2: new tab if possible
+        if ok:
+            _echo(f"Opened browser: {url}", "green")
+        else:
+            _echo(f"Please open in browser: {url}", "cyan")
+    except Exception:
+        _echo(f"Please open in browser: {url}", "cyan")
+
+def _wait_open_browser_async(host: str, port: int, path: str = "", timeout_s: int = 60) -> None:
+    """
+    Start a daemon thread:
+      - poll http://{host}:{port}{path} every 1s
+      - within timeout_s, once any HTTP response is received, open browser and report to stdout
+      - if timeout, report startup failure (cannot stop uvicorn because we use os.system)
+    """
+    # 0.0.0.0 只能 bind，不能用于本机访问；本机访问用 127.0.0.1
+    visit_host = "127.0.0.1" if host in {"0.0.0.0", "0.0.0.0/0"} else host
+    url = f"http://{visit_host}:{port}"
+    ui_url = f"{url}{path}"
+    if not url.endswith("/"):
+        url += "/"
+
+    def _worker() -> None:
+        _echo(f"[webui] Waiting for server... {url} (timeout={timeout_s}s)", "cyan")
+        start = time.time()
+        while time.time() - start < timeout_s:
+            try:
+                # 只要能建立连接并拿到任意 HTTP 响应就算 ready
+                r = requests.get(url, timeout=0.8)
+                _echo(f"[webui] Server is up ({r.status_code}). Opening browser: {url}", "green")
+                try:
+                    webbrowser.open(ui_url, new=2)
+                except Exception as e:
+                    _echo(f"[webui] Failed to open browser automatically: {e}", "yellow")
+                    _echo(f"[webui] Please open manually: {url}", "cyan")
+                return
+            except Exception:
+                time.sleep(1)
+
+        _echo(f"[webui] Timeout after {timeout_s}s — server did not respond at {url}", "red")
+        _echo("[webui] Startup may have failed (or is still starting). Check terminal logs above.", "yellow")
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
+def _download_with_progress(url: str, dst: Path) -> None:
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        with requests.get(url, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("Content-Length", 0))
+            downloaded = 0
+            last_percent = -1
+
+            with open(dst, "wb") as f:
+                for chunk in r.iter_content(chunk_size=100 * 1024):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    if total > 0:
+                        percent = int(downloaded * 100 / total)
+                        if percent != last_percent:
+                            mb_done = downloaded / (1024 * 1024)
+                            mb_total = total / (1024 * 1024)
+                            print(
+                                f"\rDownloading: {percent:3d}% "
+                                f"({mb_done:.1f}/{mb_total:.1f} MB)",
+                                end="",
+                                flush=True,
+                            )
+                            last_percent = percent
+
+            if total > 0:
+                print()  # 换行
+    except Exception as e:
+        print(e)
+        if dst.exists():
+            dst.unlink(missing_ok=True)
+        raise RuntimeError(f"Download failed: {e}, please mannually fetch it from {url}") from e
+
+def _run_in_dir(workdir: Path, cmd: str) -> int:
+    old = Path.cwd()
+    try:
+        os.chdir(workdir)
+        return os.system(cmd)
+    finally:
+        os.chdir(old)
+def _resolve_backend_dir(webui_path: Path) -> Path:
+    """
+    webui_path 可以是：
+    - 直接指向 backend/ 目录
+    - 指向解压根目录（里面有 backend/）
+    """
+    p = Path(webui_path).expanduser().resolve()
+    if not p.exists() or not p.is_dir():
+        raise RuntimeError(f"webui-path not found or not a directory: {p}")
+
+    # 如果直接就是 backend
+    if (p / "requirements.txt").is_file() and (p / "app").is_dir():
+        return p
+
+    # 如果是上层目录，尝试找 backend/
+    backend = p / "backend"
+    if (backend / "requirements.txt").is_file() and (backend / "app").is_dir():
+        return backend
+
+    raise RuntimeError(
+        f"Cannot locate backend directory from webui-path: {p}\n"
+        "Expected either:\n"
+        "  - <path>/requirements.txt and <path>/app/\n"
+        "  - <path>/backend/requirements.txt and <path>/backend/app/"
+    )
+
+
+def _load_latest_release() -> Tuple[str, str, str]:
+    """
+    返回 (tag, name, url)
+    """
+    _echo("loading version info from Github Release...", "cyan")
+    r = requests.get(
+        LATEST_API,
+        headers={"Accept": "application/vnd.github+json"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    release = r.json()
+
+    # 打印 Release 页面路径
+    html_url = release.get("html_url")
+    if html_url:
+        _echo(f"Latest release page: {html_url}", "green")
+
+
+    tag, name, url = _pick_zip(release)
+    return tag, name, url
+
+
+def cli_webui(
+    zip_path: Optional[Path] = None,
+    webui_path: Optional[Path] = None,
+    host: str = "0.0.0.0",
+    port: int = 8000,
+) -> None:
+    _confirm_yes()
+
+    # 优先级：zip_path > webui_path > 云端下载交互
+    if zip_path is not None:
+        # ---- Case A: 本地 zip（自动解压并运行）----
+        zip_path = Path(zip_path).expanduser().resolve()
+        if not zip_path.is_file():
+            raise RuntimeError(f"zip-path not found: {zip_path}")
+
+        _echo(f"Using local zip: {zip_path}", "green")
+
+        # 选择 base dir（用于解压目录）
+        base_dir = _ask_base_dir(Path.cwd() / "dataflow_webui")
+        downloads = base_dir / "downloads"
+        releases = base_dir / "releases"
+        downloads.mkdir(parents=True, exist_ok=True)
+        releases.mkdir(parents=True, exist_ok=True)
+        _echo(f"Base directory: {base_dir}", "green")
+
+        tag = "local"
+        extract_dir = releases / tag
+
+        # 解压：若已存在则询问是否覆盖提取
+        if extract_dir.exists():
+            _echo(f"Found existing extracted dir: {extract_dir}", "yellow")
+            if _ask_yes("Overwrite and re-extract?", default_no=True):
+                shutil.rmtree(extract_dir)
+                _echo(f"Extracting → {extract_dir}", "cyan")
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    zf.extractall(extract_dir)
+            else:
+                _echo("Using existing extracted files (skip extract).", "green")
+        else:
+            _echo(f"Extracting → {extract_dir}", "cyan")
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(extract_dir)
+
+        # 定位 backend
+        dirs = [p for p in extract_dir.iterdir() if p.is_dir()]
+        root = dirs[0] if len(dirs) == 1 else extract_dir
+        backend = root / "backend"
+        if not backend.exists():
+            raise RuntimeError("backend/ directory not found after extraction.")
+
+    elif webui_path is not None:
+        # ---- Case B: 直接传已解压的后端目录（直接运行）----
+        backend = _resolve_backend_dir(Path(webui_path))
+        _echo(f"Using existing backend directory: {backend}", "green")
+
+    else:
+        # ---- Case C: 两者都 None：先加载云端版本 -> 询问是否下载最新 -> 确认下载路径 -> 覆盖询问 ----
+        tag, name, url = _load_latest_release()
+        _echo(f"Latest release: {tag} ({name})", "green")
+
+        if not _ask_yes(f"Download latest release {tag} now?", default_no=True):
+            _echo("Cancelled. No zip-path/webui-path provided and you chose not to download.", "yellow")
+            return
+
+        # 确认下载路径（base dir）
+        base_dir = _ask_base_dir(Path.cwd() / "dataflow_webui")
+        downloads = base_dir / "downloads"
+        releases = base_dir / "releases"
+        downloads.mkdir(parents=True, exist_ok=True)
+        releases.mkdir(parents=True, exist_ok=True)
+        _echo(f"Base directory: {base_dir}", "green")
+
+        zip_path = downloads / name
+        _echo(f"Download to : {zip_path}", "cyan")
+
+        # 若 zip 已存在：询问 overwrite download
+        if zip_path.exists() and zip_path.stat().st_size > 0:
+            _echo(f"Found existing zip: {zip_path}", "yellow")
+            if _ask_yes("Overwrite and re-download this zip?", default_no=True):
+                zip_path.unlink(missing_ok=True)
+                _echo(f"Re-downloading → {zip_path}", "cyan")
+                _download_with_progress(url, zip_path)
+            else:
+                _echo("Using existing zip (skip download).", "green")
+        else:
+            _echo(f"Downloading: {name}", "cyan")
+            _download_with_progress(url, zip_path)
+
+        # 解压目录：releases/tag
+        extract_dir = releases / tag
+
+        # 若解压目录存在：询问是否覆盖提取
+        if extract_dir.exists():
+            _echo(f"Found existing extracted dir: {extract_dir}", "yellow")
+            if _ask_yes("Overwrite and re-extract?", default_no=True):
+                shutil.rmtree(extract_dir)
+                _echo(f"Extracting → {extract_dir}", "cyan")
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    zf.extractall(extract_dir)
+            else:
+                _echo("Using existing extracted files (skip extract).", "green")
+        else:
+            _echo(f"Extracting → {extract_dir}", "cyan")
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(extract_dir)
+
+        # 定位 backend
+        dirs = [p for p in extract_dir.iterdir() if p.is_dir()]
+        root = dirs[0] if len(dirs) == 1 else extract_dir
+        backend = root / "backend"
+        if not backend.exists():
+            raise RuntimeError("backend/ directory not found after extraction.")
+
+    # 统一：安装依赖 + 运行（保留 host/port）
+    _echo(f"Backend directory: {backend}", "green")
+    _echo("Installing backend requirements into current Python environment...", "cyan")
+    _rc = _run_in_dir(backend, "python -m pip install -r requirements.txt")
+    if _rc != 0:
+        raise RuntimeError("pip install failed (see logs above).")
+
+    _echo(f"Starting WebUI at http://{host}:{port}", "green")
+    _wait_open_browser_async(host, port, path="", timeout_s=60)
+    _rc = _run_in_dir(
+        backend,
+        f"python -m uvicorn app.main:app --reload --reload-dir app --host {host} --port {port}",
+    )
+    if _rc != 0:
+        raise RuntimeError("uvicorn exited with error (see logs above).")

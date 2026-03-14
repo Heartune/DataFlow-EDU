@@ -1,0 +1,111 @@
+taxonomy:
+- name: 分子与细胞
+  subcategories:
+  - 走近细胞
+  - 组成细胞的分子
+  - 细胞的基本结构
+  - 细胞的物质输入和输出
+  - 细胞的能量供应和利用
+  - 细胞的生命历程
+- name: 遗传与进化
+  subcategories:
+  - 遗传因子的发现
+  - 基因和染色体的关系
+  - 基因的本质
+  - 基因的表达
+  - 基因突变及其他变异
+  - 从杂交育种到基因工程
+  - 现代生物进化理论
+- name: 稳态与调节
+  subcategories:
+  - 人体的内环境与稳态
+  - 动物和人体生命活动的调节
+  - 植物的激素调节
+  - 种群和群落
+  - 生态系统及其稳定性
+- name: 生物与环境
+  subcategories:
+  - 生物科学与健康
+  - 生物科学与农业
+  - 生物科学与工业
+  - 生物科学与环境保护
+- name: 生物技术与工程
+  subcategories:
+  - 基因工程
+  - 细胞工程
+  - 胚胎工程
+  - 生物技术的安全性和伦理性问题
+  - 生态工程
+question_types:
+- name: 选择题
+  weight: 0.12
+- name: 填空题
+  weight: 0.12
+- name: 判断题
+  weight: 0.08
+- name: 简答题
+  weight: 0.22
+- name: 计算题
+  weight: 0.23
+- name: 综合题
+  weight: 0.23
+ability_levels:
+- name: 生命观念
+  weight: 0.25
+  description: 对观察到的生命现象及相互关系或特性进行解释后的抽象，是经过实证后的想法或观点，是能够理解或解释相关事件和现象的品格和能力
+  sublevels:
+  - 结构与功能观
+  - 物质与能量观
+  - 稳态与平衡观
+  - 进化与适应观
+- name: 理性思维
+  weight: 0.25
+  description: 尊重事实和证据，崇尚严谨和务实的求知态度，运用科学的思维方法认识事物、解决实际问题的思维习惯和思维能力
+  sublevels:
+  - 归纳与概括
+  - 演绎与推理
+  - 模型与建模
+  - 批判性思维
+- name: 科学探究
+  weight: 0.25
+  description: 能发现现实世界中的生物学问题，针对特定的生物学现象，进行观察、提问、实验设计、方案实施以及结果的交流与讨论的能力
+  sublevels:
+  - 提出问题与假设
+  - 设计实验方案
+  - 实施与观察
+  - 分析与交流
+- name: 社会责任
+  weight: 0.25
+  description: 基于生物学的认识，参与个人与社会事务的讨论，作出理性解释和判断，尝试解决生产生活中的生物学问题的担当和能力
+  sublevels:
+  - 参与社会事务讨论
+  - 理性判断与解释
+  - 参与环境保护
+  - 健康生活倡导
+operators:
+  mineru_parsing:
+    img_dir: dataflow_edu/data/resources/img
+    md_dir: dataflow_edu/data/resources/md
+    batch_size: 50
+    poll_interval: 5
+    poll_timeout: 600
+    skip_existing: true
+    language: ch
+    enable_formula: true
+    enable_table: true
+  generation:
+    md_dir: dataflow_edu/data/resources/md
+    output_dir: dataflow_edu/data/generated_and_balanced
+    questions_per_pair: 5
+    max_workers: 8
+    api_delay: 0.3
+    request_timeout: 120
+    max_retries: 3
+    save_interval: 5
+  balancing:
+    output_dir: dataflow_edu/data/generated_and_balanced
+    sample_size: 32
+    max_iterations: 10
+    max_per_sublevel_iterations: 2
+    tolerance: 0.03
+    excluded_ability_sublevels: []

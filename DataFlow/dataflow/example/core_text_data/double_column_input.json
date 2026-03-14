@@ -1,0 +1,18 @@
+[
+    {
+        "role": "pig",
+        "term": "eat"
+    },
+    {
+        "role": "tiger",
+        "term": "chase"
+    },
+    {
+        "role": "people",
+        "term": "drink"
+    },
+    {
+        "role": "bird",
+        "term": "dance"
+    }
+]

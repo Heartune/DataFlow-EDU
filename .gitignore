@@ -1,0 +1,20 @@
+# 环境变量与 API Key
+.env
+.env.*
+
+# LLM / MinerU 等运行时配置（含敏感信息）
+.llm_config.json
+**/.mineru_ocr_config.json
+**/.optimize_answers_config.json
+**/.gen_judgment_config.json
+**/.gen_model_answer_config.json
+
+# resources 大文件（md 保留）
+dataflow_edu/data/resources/**/*.pdf
+dataflow_edu/data/resources/**/img/
+
+ideas.md
+
+# 含敏感信息的工具目录
+utils_from_CNLaw-Bench/
+utils_from_ROBOTheory/
