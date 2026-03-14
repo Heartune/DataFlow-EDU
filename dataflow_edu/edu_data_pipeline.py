@@ -29,6 +29,7 @@ from dataflow_edu.operators import (  # noqa: E402
     DeduplicationOperator,
     DomainCleaningOperator,
     DomainRefinementOperator,
+    ExecuteOperator,
     MinerUOCROperator,
 )
 from dataflow_edu.pipelines import GenerationPipeline  # noqa: E402
@@ -221,6 +222,18 @@ def run_deduplication():
     op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
 
 
+def run_execute():
+    """阶段四 4.1：Execute Operator - 将待测大模型接入作答并记录答案"""
+    config = load_config(project_root=_PROJECT_ROOT)
+    path = get_config_path(_PROJECT_ROOT)
+    if not os.path.isfile(path):
+        print("⚠ 配置文件不存在，使用内置 4.1 参数。")
+        config = default_config()
+
+    op = ExecuteOperator()
+    op.run(storage=None, config=config)
+
+
 def run_balancing():
     """阶段二 2.2：Balancing Operator - 能力子层级与题型分布均衡补题"""
     config = load_config(project_root=_PROJECT_ROOT)
@@ -290,7 +303,7 @@ def main():
         "3.6": lambda: _stub("3.6 Synthesis"),
         "3.7": lambda: _stub("3.7 Translation"),
         "3.8": lambda: _stub("3.8 MCQ Verify"),
-        "4.1": lambda: _stub("4.1 Execute Operator"),
+        "4.1": run_execute,
         "4.2": lambda: _stub("4.2 Judge Operator"),
     }
 

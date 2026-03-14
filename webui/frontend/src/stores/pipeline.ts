@@ -12,6 +12,7 @@ const PAGE_SIZE = 20;
 
 export const usePipelineStore = defineStore('pipeline', () => {
   const bookName = ref('');
+  const showConfigOnly = ref(false);
   const currentStage = ref<number | null>(null);
   const taxonomySubToCat = ref<Record<string, string>>({});
 
@@ -71,8 +72,14 @@ export const usePipelineStore = defineStore('pipeline', () => {
     currentStage.value = 3;
   }
 
+  function openConfig() {
+    showConfigOnly.value = true;
+    currentStage.value = 0;
+  }
+
   function reset() {
     bookName.value = '';
+    showConfigOnly.value = false;
     currentStage.value = null;
     stage1Data.value = null;
     stage1Stats.value = null;
@@ -152,6 +159,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
 
   return {
     bookName,
+    showConfigOnly,
     currentStage,
     taxonomySubToCat,
     stage1Data,
@@ -176,6 +184,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     stage3DiffFilter,
     stage3Page,
     load,
+    openConfig,
     reset,
     filteredStage1Pairs,
     stage2FilteredQuestions,

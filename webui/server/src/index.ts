@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dataRoutes } from './routes/data.js';
+import { configRoutes } from './routes/config.js';
 import { pipelineRoutes } from './routes/pipeline.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api', dataRoutes(projectRoot));
+app.use('/api', configRoutes(projectRoot));
 app.use('/api', pipelineRoutes());
 
 if (process.env.NODE_ENV === 'production') {

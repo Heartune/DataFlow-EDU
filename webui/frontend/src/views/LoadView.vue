@@ -83,6 +83,13 @@ function onKeydown(e: KeyboardEvent) {
         >
           {{ loading ? '加载中...' : '加载' }}
         </button>
+        <button
+          type="button"
+          class="w-full py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors cursor-pointer"
+          @click="store.openConfig()"
+        >
+          进入配置
+        </button>
       </div>
 
       <div

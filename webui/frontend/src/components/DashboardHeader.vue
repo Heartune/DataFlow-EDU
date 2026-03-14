@@ -15,7 +15,8 @@ function hasStage(i: number) {
 }
 
 function switchStage(stage: number) {
-  if (hasStage(stage)) store.currentStage = stage;
+  if (stage === 0) store.currentStage = 0;
+  else if (hasStage(stage)) store.currentStage = stage;
 }
 
 function showLoadSection() {
@@ -34,7 +35,7 @@ function showLoadSection() {
             DataFlow-EDU Pipeline
           </h1>
           <p class="text-xs text-slate-500 mt-0.5 truncate">
-            阶段1 · 阶段2 · 阶段3 · {{ store.bookName }}
+            配置 · 阶段1 · 阶段2 · 阶段3 {{ store.bookName ? `· ${store.bookName}` : '' }}
           </p>
         </div>
         <button
@@ -53,10 +54,21 @@ function showLoadSection() {
               d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"
             />
           </svg>
-          更换教材
+          {{ store.showConfigOnly ? '返回' : '更换教材' }}
         </button>
       </div>
       <div class="flex items-center gap-1 py-2">
+        <button
+          :class="[
+            'tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            store.currentStage === 0
+              ? 'bg-brand-500 text-white'
+              : 'text-slate-600 hover:bg-slate-100',
+          ]"
+          @click="switchStage(0)"
+        >
+          配置
+        </button>
         <button
           v-for="i in 3"
           :key="i"

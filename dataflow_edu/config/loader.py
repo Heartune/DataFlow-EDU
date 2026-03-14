@@ -13,7 +13,9 @@ from dataflow_edu.config.schema import (
     BalancingConfig,
     DeduplicationConfig,
     DomainCleaningConfig,
+    DomainRefinementConfig,
     EduConfig,
+    ExecuteConfig,
     GenerationConfig,
     MinerUOCRConfig,
     QuestionType,
@@ -99,12 +101,24 @@ def _config_to_dict(config: EduConfig) -> dict:
                 "threshold_remove": config.operators.get("domain_cleaning", DomainCleaningConfig()).threshold_remove,
                 "domain_name": config.operators.get("domain_cleaning", DomainCleaningConfig()).domain_name,
             },
+            "domain_refinement": {
+                "input_dir": config.operators.get("domain_refinement", DomainRefinementConfig()).input_dir,
+                "output_dir": config.operators.get("domain_refinement", DomainRefinementConfig()).output_dir,
+                "max_workers": config.operators.get("domain_refinement", DomainRefinementConfig()).max_workers,
+                "max_retries": config.operators.get("domain_refinement", DomainRefinementConfig()).max_retries,
+                "target_scores": config.operators.get("domain_refinement", DomainRefinementConfig()).target_scores,
+                "domain_name": config.operators.get("domain_refinement", DomainRefinementConfig()).domain_name,
+            },
             "deduplication": {
                 "input_dir": config.operators.get("deduplication", DeduplicationConfig()).input_dir,
                 "output_dir": config.operators.get("deduplication", DeduplicationConfig()).output_dir,
                 "threshold": config.operators.get("deduplication", DeduplicationConfig()).threshold,
                 "num_perm": config.operators.get("deduplication", DeduplicationConfig()).num_perm,
                 "n_gram": config.operators.get("deduplication", DeduplicationConfig()).n_gram,
+            },
+            "execute": {
+                "input_dir": config.operators.get("execute", ExecuteConfig()).input_dir,
+                "output_dir": config.operators.get("execute", ExecuteConfig()).output_dir,
             },
         },
     }
@@ -228,6 +242,22 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
         domain_name=str(dom_op.get("domain_name", dom_defaults.domain_name)),
     )
 
+    domref_defaults = DomainRefinementConfig()
+    domref_op = d.get("operators", {}) or {}
+    domref_op = domref_op.get("domain_refinement")
+    if not isinstance(domref_op, dict):
+        domref_op = {}
+    raw_domref_target = domref_op.get("target_scores", domref_defaults.target_scores)
+    domref_target_list = [int(x) for x in raw_domref_target] if isinstance(raw_domref_target, (list, tuple)) else [2, 3]
+    domref = DomainRefinementConfig(
+        input_dir=str(domref_op.get("input_dir", domref_defaults.input_dir)),
+        output_dir=str(domref_op.get("output_dir", domref_defaults.output_dir)),
+        max_workers=int(domref_op.get("max_workers", domref_defaults.max_workers)),
+        max_retries=int(domref_op.get("max_retries", domref_defaults.max_retries)),
+        target_scores=domref_target_list,
+        domain_name=str(domref_op.get("domain_name", domref_defaults.domain_name)),
+    )
+
     dedup_defaults = DeduplicationConfig()
     dedup_op = d.get("operators", {}) or {}
     dedup_op = dedup_op.get("deduplication")
@@ -241,6 +271,16 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
         n_gram=int(dedup_op.get("n_gram", dedup_defaults.n_gram)),
     )
 
+    exec_defaults = ExecuteConfig()
+    exec_op = d.get("operators", {}) or {}
+    exec_op = exec_op.get("execute")
+    if not isinstance(exec_op, dict):
+        exec_op = {}
+    exec_cfg = ExecuteConfig(
+        input_dir=str(exec_op.get("input_dir", exec_defaults.input_dir)),
+        output_dir=str(exec_op.get("output_dir", exec_defaults.output_dir)),
+    )
+
     return EduConfig(
         taxonomy=taxonomy,
         question_types=question_types,
@@ -252,7 +292,9 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
             "ambiguity_cleaning": amb,
             "ambiguity_refinement": ref,
             "domain_cleaning": dom,
+            "domain_refinement": domref,
             "deduplication": dedup,
+            "execute": exec_cfg,
         },
     )
 

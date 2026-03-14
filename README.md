@@ -1,6 +1,6 @@
-# 🌟DataFlow-EDU: 端到端交互式学科语料库&Benchmark生成
+# 🌟DataFlow-EDU: 端到端学科语料库&Benchmark生成
 
-> 🌟从一到无穷大
+> 从一到无穷大
 
 Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 

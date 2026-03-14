@@ -7,13 +7,13 @@ import ToastContainer from '@/components/ToastContainer.vue';
 import { usePipelineStore } from '@/stores/pipeline';
 
 const store = usePipelineStore();
-const showLoad = computed(() => !store.bookName);
+const showLoad = computed(() => !store.bookName && !store.showConfigOnly);
 </script>
 
 <template>
   <div class="bg-slate-50 min-h-screen font-sans text-slate-900 antialiased">
     <LoadView v-if="showLoad" />
-    <DashboardView v-else />
+    <DashboardView v-else :config-only="store.showConfigOnly" />
 
     <QuestionSidebar />
     <ToastContainer />
