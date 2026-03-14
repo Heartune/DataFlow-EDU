@@ -111,8 +111,8 @@ operators:
     tolerance: 0.03
     excluded_ability_sublevels: []
   ambiguity_cleaning:
-    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
     output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
     max_workers: 8
     max_retries: 3
     threshold_remove: 1
@@ -121,7 +121,9 @@ operators:
     output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
     max_workers: 8
     max_retries: 3
-    target_scores: [2, 3]
+    target_scores:
+    - 2
+    - 3
   domain_cleaning:
     input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
     output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
@@ -134,7 +136,9 @@ operators:
     output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
     max_workers: 8
     max_retries: 3
-    target_scores: [2, 3]
+    target_scores:
+    - 2
+    - 3
     domain_name: 生物学
   deduplication:
     input_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
@@ -145,3 +149,6 @@ operators:
   execute:
     input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
     output_dir: dataflow_edu/data/execute_and_judge/4_1_executed
+  judge:
+    input_dir: dataflow_edu/data/execute_and_judge/4_1_executed
+    output_dir: dataflow_edu/data/execute_and_judge/4_2_judged
