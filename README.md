@@ -1,4 +1,4 @@
-# DataFlow-EDU：端到端交互式学科语料库与Benchmark生成
+# DataFlow-EDU：端到端交互式学科语料库&Benchmark生成
 
 > 从一个PDF到无穷大
 
@@ -48,11 +48,11 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 - **3.3 Domain Cleaning Operator：** 检查领域相关性和剔除低质量样本。
 - **3.4 Domain Refinement Operator：** 对于中质量样本，优化领域相关性。
 - **3.5 Deduplication Operator：** 利用N-Gram计算相似度，清洗掉高度重复的冗余题目。（似乎DataFlow中有？）
-- **3.6 Synthesis Operator：** 为题目生成解析。
-- **3.7 Translation Operator：** 执行多语言翻译，默认支持英法两种语言。支持检查残留源语言文本重新翻译。
-- **3.8 MCQ Verify Operator：** 专为选择题设计的清洗算子，检查选择题是否包含 ABCD 四个选项，没有的补上。optimize_answers有validate_choice_questions（检查ABCD）、complete_choice_options（缺失时补全）。
+- **3.6 Synthesis Operator：** 为题目生成解析。（暂时跳过）
+- **3.7 Translation Operator：** 执行多语言翻译，默认支持英法两种语言。支持检查残留源语言文本重新翻译。（暂时跳过）
+- **3.8 MCQ Verify Operator：** 专为选择题设计的清洗算子，检查选择题是否包含 ABCD 四个选项，没有的补上。optimize_answers有validate_choice_questions（检查ABCD）、complete_choice_options（缺失时补全）。（暂时跳过）
 
-> 建议注意，有能提升难度的地方可以自己改一下，比如生成一些东西的时候.txt
+> 建议注意，有能提升难度的地方可以自己改一下，比如生成一些东西的时候
 
 ### 阶段四：Execute & Judge
 
@@ -71,7 +71,6 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
 Pipeline 看板（Vue 3 + Node.js）位于 `webui/`。启动方式：`cd webui && npm install && npm run dev`.
 
-原单文件 `edu_pipeline_webui.html` 仍可独立使用（需在项目根目录启动 HTTP 服务）。
 
 ---
 

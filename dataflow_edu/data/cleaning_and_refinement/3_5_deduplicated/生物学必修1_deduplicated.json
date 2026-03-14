@@ -4920,34 +4920,5 @@
       "domain_relevance_score": 5,
       "domain_relevance_reason": "该题目以高中生物核心实验“探究酵母菌细胞呼吸的方式”为背景，深度考察了细胞呼吸产物检测（重铬酸钾）、光合作用与碳循环、无氧呼吸实验操作原理等核心知识点。同时，题目将生物学知识与生态学环境保护原则相结合，符合生物学科核心素养中“社会责任”的评价要求，与学科内容高度契合。"
     }
-  ],
-  "metadata": {
-    "source": "d:\\PKU MY DREAM\\DataFlow-EDU\\dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned\\生物学必修1_domain_cleaned.json",
-    "stage1": "d:\\PKU MY DREAM\\DataFlow-EDU\\dataflow_edu/data/generation_and_balancing\\2_1_generated_stage_1\\生物学必修1_stage1_taxonomy.json",
-    "stage2": "d:\\PKU MY DREAM\\DataFlow-EDU\\dataflow_edu/data/generation_and_balancing\\2_1_generated_stage_2\\生物学必修1_generated_questions.json",
-    "total": 355,
-    "ambiguity_cleaning": {
-      "kept": 328,
-      "removed": 27,
-      "threshold_remove": 1
-    },
-    "ambiguity_refinement": {
-      "refined_count": 27,
-      "unchanged_high": 299,
-      "failed_kept": 0,
-      "discarded_rescore": 2
-    },
-    "domain_cleaning": {
-      "kept": 326,
-      "removed": 0,
-      "threshold_remove": 1,
-      "domain_name": "生物学"
-    },
-    "domain_refinement": {
-      "refined_count": 3,
-      "unchanged_high": 323,
-      "failed_kept": 0,
-      "discarded_rescore": 0
-    }
-  }
+  ]
 }
