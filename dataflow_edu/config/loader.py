@@ -17,6 +17,7 @@ from dataflow_edu.config.schema import (
     EduConfig,
     ExecuteConfig,
     GenerationConfig,
+    JudgeConfig,
     MinerUOCRConfig,
     QuestionType,
     TaxonomyItem,

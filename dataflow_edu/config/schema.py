@@ -141,6 +141,14 @@ class ExecuteConfig:
 
 
 @dataclass
+class JudgeConfig:
+    """4.2 Judge Operator 参数。"""
+
+    input_dir: str = "dataflow_edu/data/execute_and_judge/4_1_executed"
+    output_dir: str = "dataflow_edu/data/execute_and_judge/4_2_judged"
+
+
+@dataclass
 class EduConfig:
     """DataFlow-EDU 完整配置。"""
 
@@ -199,5 +207,6 @@ def default_config() -> EduConfig:
             "domain_refinement": DomainRefinementConfig(),
             "deduplication": DeduplicationConfig(),
             "execute": ExecuteConfig(),
+            "judge": JudgeConfig(),
         },
     )

@@ -1,6 +1,6 @@
 # 🌟DataFlow-EDU: 端到端学科语料库&Benchmark生成
 
-> 从一到无穷大
+> <span style="color:#E40303">From</span> <span style="color:#FF8C00">One</span> <span style="color:#FFED00">to</span> <span style="color:#008026">In</span><span style="color:#24408E">fi</span><span style="color:#732982">ni</span><span style="color:#E40303">ty</span>
 
 Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
