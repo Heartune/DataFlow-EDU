@@ -1,6 +1,6 @@
-# DataFlow-EDU：端到端交互式学科语料库&Benchmark生成
+# 🌟DataFlow-EDU: 端到端交互式学科语料库&Benchmark生成
 
-> 从一个PDF到无穷大
+> 🌟从一到无穷大
 
 Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
@@ -27,7 +27,7 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
 这一阶段主要解决「考什么」和「从哪取数据」的问题。
 
-- **1.1 Configuration Manager：** 支持灵活配置“考察知识方向（大类-小类双层架构）” + “考察能力层级（也是主层级-子层级双层架构）” + “考察形式（题型）”。同时支持配置Pipeline 和各 Operator 的参数。注意这部分是用户手动配置。
+- **1.1 Configuration Manager：** 类似llamafactory，支持可视化、灵活配置“考察知识方向（大类-小类双层架构）” + “考察能力层级（也是主层级-子层级双层架构）” + “考察形式（题型）”。同时支持配置Pipeline 和各 Operator 的参数。注意这部分是用户手动配置。
 - **1.2 MinerU OCR Operator：** 批量输入高质量教材PDF图片（图片直接用wps的pdf转图片功能），调用 MinerU 引擎的批量处理 API，利用通用数据算子对每页提取文本、表格和复杂图文对，并清洗为标准化的 Markdown 格式。
 
 ### 阶段二：Generation & Balancing 

@@ -133,6 +133,14 @@ class DeduplicationConfig:
 
 
 @dataclass
+class ExecuteConfig:
+    """4.1 Execute Operator 参数。"""
+
+    input_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated"
+    output_dir: str = "dataflow_edu/data/execute_and_judge/4_1_executed"
+
+
+@dataclass
 class EduConfig:
     """DataFlow-EDU 完整配置。"""
 
@@ -190,5 +198,6 @@ def default_config() -> EduConfig:
             "domain_cleaning": DomainCleaningConfig(),
             "domain_refinement": DomainRefinementConfig(),
             "deduplication": DeduplicationConfig(),
+            "execute": ExecuteConfig(),
         },
     )

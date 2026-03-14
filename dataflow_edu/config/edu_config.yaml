@@ -142,3 +142,6 @@ operators:
     threshold: 0.9
     num_perm: 128
     n_gram: 5
+  execute:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/execute_and_judge/4_1_executed
