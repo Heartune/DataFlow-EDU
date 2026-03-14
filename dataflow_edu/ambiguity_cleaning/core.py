@@ -37,6 +37,33 @@ SYSTEM_PROMPT = """你是一位专业的教育测评专家，具有丰富的学�
 """
 
 
+def _print_ambiguity_distribution(items: List[dict]) -> None:
+    """在终端展示二义性分数分布（含百分比）。"""
+    from collections import Counter
+
+    total = len(items)
+    if total == 0:
+        return
+    scores = []
+    for it in items:
+        s = it.get("ambiguity_score")
+        try:
+            scores.append(int(s) if s is not None and 1 <= int(s) <= 5 else None)
+        except (TypeError, ValueError):
+            scores.append(None)
+    cnt = Counter(scores)
+    print("\n【二义性分布】")
+    for i in range(1, 6):
+        n = cnt.get(i, 0)
+        pct = 100 * n / total
+        print(f"  {i}分: {n} 题 ({pct:.1f}%)")
+    if cnt.get(None, 0) > 0:
+        n = cnt[None]
+        pct = 100 * n / total
+        print(f"  无/未知: {n} 题 ({pct:.1f}%)")
+    print(f"  合计: {total} 题")
+
+
 def _evaluate_ambiguity(
     question: str,
     answer: str,

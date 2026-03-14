@@ -14,6 +14,7 @@ import unicodedata
 from pathlib import Path
 
 from openai import OpenAI
+from tqdm import tqdm
 
 
 def _display_width(s: str) -> int:
@@ -499,21 +500,20 @@ def call_llm(
             if isinstance(content, str):
                 content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
             usage = getattr(resp, "usage", None)
-            finish = getattr(resp.choices[0], "finish_reason", "unknown")
-            # 简单日志
-            print(
+            # 简单日志（用 tqdm.write 避免与进度条同一行）
+            tqdm.write(
                 f"[API] OK | key={key_tag} | {elapsed:.2f}s | "
                 f"tokens=({getattr(usage, 'prompt_tokens', '?')}/{getattr(usage, 'completion_tokens', '?')})"
             )
             return content.strip() if content else None
         except Exception as e:
             err = str(e)
-            print(
+            tqdm.write(
                 f"[API] 异常 尝试 {attempt + 1}/{retries} | {type(e).__name__}: {err[:300]}"
             )
             if "429" in err or "rate" in err.lower():
                 wait = RETRY_DELAY * (attempt + 1) * 2
-                print(f"限流，等待 {wait}s 后重试...")
+                tqdm.write(f"限流，等待 {wait}s 后重试...")
                 time.sleep(wait)
             elif attempt < retries - 1:
                 time.sleep(RETRY_DELAY)

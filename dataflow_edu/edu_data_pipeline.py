@@ -24,7 +24,10 @@ from dataflow_edu.config.manager_cli import run_config_manager
 from dataflow_edu.config.schema import default_config
 from dataflow_edu.operators import (  # noqa: E402
     AmbiguityCleaningOperator,
+    AmbiguityRefinementOperator,
     BalancingOperator,
+    DomainCleaningOperator,
+    DomainRefinementOperator,
     MinerUOCROperator,
 )
 from dataflow_edu.pipelines import GenerationPipeline  # noqa: E402
@@ -107,6 +110,87 @@ def run_ambiguity_cleaning():
     op.run(storage=None, output_dir=output_dir, input_dir=input_dir, config=config)
 
 
+def run_ambiguity_refinement():
+    """阶段三 3.2：Ambiguity Refinement Operator - 对中质量（2–3 分）题目优化二义性"""
+    config = load_config(project_root=_PROJECT_ROOT)
+    path = get_config_path(_PROJECT_ROOT)
+    if not os.path.isfile(path):
+        print("⚠ 配置文件不存在，使用内置 3.2 参数。")
+        config = default_config()
+
+    ref = config.operators.get("ambiguity_refinement") or default_config().operators.get(
+        "ambiguity_refinement"
+    )
+    if ref is None:
+        from dataflow_edu.config.schema import AmbiguityRefinementConfig
+
+        ref = AmbiguityRefinementConfig()
+    output_dir = ref.output_dir if os.path.isabs(ref.output_dir) else os.path.join(_PROJECT_ROOT, ref.output_dir)
+    input_dir = ref.input_dir if os.path.isabs(ref.input_dir) else os.path.join(_PROJECT_ROOT, ref.input_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    op = AmbiguityRefinementOperator(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        max_workers=getattr(ref, "max_workers", 8),
+    )
+    op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
+
+
+def run_domain_cleaning():
+    """阶段三 3.3：Domain Cleaning Operator - 领域相关性检查与低质量样本剔除"""
+    config = load_config(project_root=_PROJECT_ROOT)
+    path = get_config_path(_PROJECT_ROOT)
+    if not os.path.isfile(path):
+        print("⚠ 配置文件不存在，使用内置 3.3 参数。")
+        config = default_config()
+
+    dom = config.operators.get("domain_cleaning") or default_config().operators.get(
+        "domain_cleaning"
+    )
+    if dom is None:
+        from dataflow_edu.config.schema import DomainCleaningConfig
+
+        dom = DomainCleaningConfig()
+    output_dir = dom.output_dir if os.path.isabs(dom.output_dir) else os.path.join(_PROJECT_ROOT, dom.output_dir)
+    input_dir = dom.input_dir if os.path.isabs(dom.input_dir) else os.path.join(_PROJECT_ROOT, dom.input_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    op = DomainCleaningOperator(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        max_workers=getattr(dom, "max_workers", 8),
+    )
+    op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
+
+
+def run_domain_refinement():
+    """阶段三 3.4：Domain Refinement Operator - 对中质量（2–3 分）题目优化领域相关性"""
+    config = load_config(project_root=_PROJECT_ROOT)
+    path = get_config_path(_PROJECT_ROOT)
+    if not os.path.isfile(path):
+        print("⚠ 配置文件不存在，使用内置 3.4 参数。")
+        config = default_config()
+
+    ref = config.operators.get("domain_refinement") or default_config().operators.get(
+        "domain_refinement"
+    )
+    if ref is None:
+        from dataflow_edu.config.schema import DomainRefinementConfig
+
+        ref = DomainRefinementConfig()
+    output_dir = ref.output_dir if os.path.isabs(ref.output_dir) else os.path.join(_PROJECT_ROOT, ref.output_dir)
+    input_dir = ref.input_dir if os.path.isabs(ref.input_dir) else os.path.join(_PROJECT_ROOT, ref.input_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    op = DomainRefinementOperator(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        max_workers=getattr(ref, "max_workers", 8),
+    )
+    op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
+
+
 def run_balancing():
     """阶段二 2.2：Balancing Operator - 能力子层级与题型分布均衡补题"""
     config = load_config(project_root=_PROJECT_ROOT)
@@ -169,9 +253,9 @@ def main():
         "2.1": run_generation,
         "2.2": run_balancing,
         "3.1": run_ambiguity_cleaning,
-        "3.2": lambda: _stub("3.2 Ambiguity Refinement"),
-        "3.3": lambda: _stub("3.3 Domain Cleaning"),
-        "3.4": lambda: _stub("3.4 Domain Refinement"),
+        "3.2": run_ambiguity_refinement,
+        "3.3": run_domain_cleaning,
+        "3.4": run_domain_refinement,
         "3.5": lambda: _stub("3.5 Deduplication"),
         "3.6": lambda: _stub("3.6 Synthesis"),
         "3.7": lambda: _stub("3.7 Translation"),

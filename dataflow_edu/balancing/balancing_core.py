@@ -21,6 +21,7 @@ from dataflow_edu.config.schema import (
     TaxonomyItem,
 )
 from dataflow_edu.generation.generation_core import (
+    _build_subcat_to_category,
     _read_md_content,
     generate_questions_for_balance,
     get_md_pairs,
@@ -389,12 +390,15 @@ class BalancingBalancer:
         if not md_pair:
             return []
         subcats = pair_info.get("subcategories", []) or ["通用"]
+        subcat_to_cat = _build_subcat_to_category(self.config.taxonomy or [])
         return generate_questions_for_balance(
             md_pair=md_pair,
             subcategories=subcats,
             q_type=q_type,
             target_ability_sublevel=sublevel_name,
             count=count,
+            subcat_to_cat=subcat_to_cat,
+            ability_levels=self.config.ability_levels or [],
         )
 
     def should_stop(self) -> Tuple[bool, str]:
@@ -471,7 +475,7 @@ class BalancingBalancer:
         print("2.2 Balancing：能力子层级与题型闭环补题")
         print(f"{'=' * 70}")
         print(f"初始题目数: {len(self.questions)}")
-        print(f"最大迭代: {self.bal_cfg.max_iterations} | 采样数: {sample_size}")
+        print(f"最大迭代: {self.bal_cfg.max_iterations} | 每轮补题: {self.bal_cfg.questions_per_round} | 采样数: {sample_size}")
         print(f"容差: {self.bal_cfg.tolerance:.0%}")
         print(f"排除子层级: {list(self.excluded) or '无'}")
         self.print_distribution()
@@ -491,31 +495,40 @@ class BalancingBalancer:
             if not gaps:
                 break
 
-            sid, qt, gap = gaps[0]
-            sublevel_name = sid.split("::")[-1] if "::" in sid else sid
-            if self.sublevel_iterations.get(sid, 0) >= max_per:
-                print(f"⏭️ {sublevel_name} 已达单子层级最大轮数，跳过")
-                self.sublevel_iterations[sid] = 0
+            sid, qt, gap = None, None, None
+            for s, q, g in gaps:
+                if self.sublevel_iterations.get(s, 0) >= max_per:
+                    sn = s.split("::")[-1] if "::" in s else s
+                    print(f"⏭️ {sn} 已达单子层级最大轮数，改用下一个缺口")
+                    continue
+                sid, qt, gap = s, q, g
+                break
+            if sid is None:
+                for s in self.sublevel_iterations:
+                    self.sublevel_iterations[s] = 0
+                print("⏭️ 所有缺口子层级已达单子层级最大轮数，重置后下轮继续")
                 continue
 
+            sublevel_name = sid.split("::")[-1] if "::" in sid else sid
             q_type = q_type_map.get(qt)
             if not q_type:
                 continue
 
-            print(f"🎯 目标: 【{sublevel_name}】+【{qt}】 缺口 {gap} 道")
+            cap = min(gap, self.bal_cfg.questions_per_round)
+            print(f"🎯 目标: 【{sublevel_name}】+【{qt}】 缺口 {gap} 道 | 本轮补 {cap} 道")
 
             suitable = self.sample_and_check(sid, sublevel_name, qt, sample_size)
             if not suitable:
                 print("  ⚠️ 无适合页面")
                 continue
 
-            per_pair = min(2, max(1, gap // len(suitable) + 1))
-            tasks_built = min(len(suitable), (gap + per_pair - 1) // per_pair)
+            per_pair = min(2, max(1, cap // len(suitable) + 1))
+            tasks_built = min(len(suitable), (cap + per_pair - 1) // per_pair)
             print(f"  ✓ 适宜性筛选: 采样 {sample_size} 对 → 适合 {len(suitable)} 对 | 每对最多生成 {per_pair} 道 | 启用 {tasks_built} 对生成")
 
             self.sublevel_iterations[sid] = self.sublevel_iterations.get(sid, 0) + 1
             tasks = []
-            remaining = gap
+            remaining = cap
             for idx in suitable:
                 if remaining <= 0:
                     break
@@ -606,7 +619,8 @@ def run_balancing(
         bal_cfg = BalancingConfig(
             output_dir=bal_cfg.get("output_dir", "dataflow_edu/data/generation_and_balancing"),
             sample_size=int(bal_cfg.get("sample_size", 32)),
-            max_iterations=int(bal_cfg.get("max_iterations", 10)),
+            max_iterations=int(bal_cfg.get("max_iterations", 5)),
+            questions_per_round=int(bal_cfg.get("questions_per_round", 10)),
             max_per_sublevel_iterations=int(bal_cfg.get("max_per_sublevel_iterations", 2)),
             tolerance=float(bal_cfg.get("tolerance", 0.03)),
             excluded_ability_sublevels=excluded_override or list(bal_cfg.get("excluded_ability_sublevels", [])),
@@ -618,6 +632,7 @@ def run_balancing(
                 output_dir=bal_cfg.output_dir,
                 sample_size=bal_cfg.sample_size,
                 max_iterations=bal_cfg.max_iterations,
+                questions_per_round=bal_cfg.questions_per_round,
                 max_per_sublevel_iterations=bal_cfg.max_per_sublevel_iterations,
                 tolerance=bal_cfg.tolerance,
                 excluded_ability_sublevels=excluded_override,
@@ -669,8 +684,10 @@ def run_balancing(
                 "题目": q.get("question", ""),
                 "标准答案": q.get("answer", ""),
                 "题型": q.get("type", ""),
+                "知识大类": q.get("category", ""),
                 "知识小类": q.get("subcategory", ""),
                 "能力层级": q.get("ability_level", "通用"),
+                "能力主层级": q.get("ability_main", ""),
                 "难度": q.get("difficulty", "中"),
                 "来源页码": q.get("source_page", ""),
             })

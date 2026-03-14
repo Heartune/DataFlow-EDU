@@ -109,7 +109,8 @@ class BalancingOperator(OperatorABC):
             bal_cfg = BalancingConfig(
                 output_dir=bal_cfg.get("output_dir", "dataflow_edu/data/generation_and_balancing"),
                 sample_size=int(bal_cfg.get("sample_size", 32)),
-                max_iterations=int(bal_cfg.get("max_iterations", 10)),
+                max_iterations=int(bal_cfg.get("max_iterations", 30)),
+                questions_per_round=int(bal_cfg.get("questions_per_round", 10)),
                 max_per_sublevel_iterations=int(bal_cfg.get("max_per_sublevel_iterations", 2)),
                 tolerance=float(bal_cfg.get("tolerance", 0.03)),
                 excluded_ability_sublevels=list(bal_cfg.get("excluded_ability_sublevels", [])),

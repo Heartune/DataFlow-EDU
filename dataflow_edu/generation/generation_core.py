@@ -10,7 +10,8 @@ import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Optional, Tuple
+from types import SimpleNamespace
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import pandas as pd
 from tqdm import tqdm
@@ -91,6 +92,28 @@ def _format_ability_levels_for_prompt(ability_levels: List[AbilityLevelItem]) ->
     return "\n".join(lines)
 
 
+def _build_subcat_to_category(taxonomy: List[TaxonomyItem]) -> Dict[str, str]:
+    """从 taxonomy 构建 小类 -> 大类 映射。"""
+    m = {}
+    for t in taxonomy:
+        for sc in (t.subcategories or []):
+            if sc and sc.strip():
+                m[sc.strip()] = t.name
+    return m
+
+
+def _build_subcat_whitelist(taxonomy: List[TaxonomyItem], include_generic: bool = True) -> set:
+    """从 taxonomy 构建小类白名单（set）。include_generic 为 True 时加入「通用」。"""
+    whitelist = set()
+    for t in taxonomy:
+        for sc in (t.subcategories or []):
+            if sc and sc.strip():
+                whitelist.add(sc.strip())
+    if include_generic:
+        whitelist.add("通用")
+    return whitelist
+
+
 def _allocate_by_weight(items: list, num_slots: int, weight_attr: str = "weight") -> List:
     """
     按 weight 将 num_slots 个槽位分配到 items，返回长度为 num_slots 的序列。
@@ -169,23 +192,67 @@ def _build_shuffled_type_sequence(
     return sequence[:total_slots]
 
 
+def _sublevel_to_main(ability_level: str, ability_levels: List[AbilityLevelItem]) -> str:
+    """
+    由子层级名反查主层级。配置中每个子层级只属于一个主层级。
+    找不到时返回空字符串（槽位设计下应能映射）。
+    """
+    if not ability_level or not ability_level.strip():
+        return ""
+    al = ability_level.strip()
+    for a in ability_levels or []:
+        if a.sublevels:
+            if al in a.sublevels:
+                return a.name
+        else:
+            if al == a.name:
+                return a.name
+    return ""
+
+
+def _expand_ability_levels_to_sublevels(
+    ability_levels: List[AbilityLevelItem],
+) -> List[Tuple[str, float]]:
+    """
+    将 ability_levels 展开为子层级及权重列表。
+    有 sublevels 时：每个子层级权重 = item.weight / len(sublevels)
+    无 sublevels 时：用 item.name 作为子层级，权重 = item.weight
+    Returns: [(sublevel_name, weight), ...]
+    """
+    result: List[Tuple[str, float]] = []
+    for a in ability_levels:
+        if a.sublevels:
+            per_sub = a.weight / len(a.sublevels)
+            for sub in a.sublevels:
+                result.append((sub, per_sub))
+        else:
+            result.append((a.name, a.weight))
+    return result
+
+
 def _build_shuffled_ability_sequence(
     ability_levels: List[AbilityLevelItem],
     total_slots: int,
     seed: int | None = None,
-) -> List[AbilityLevelItem | None]:
+) -> List[str | None]:
     """
-    按 weight 构造总槽位数的能力层级序列，随机打乱后返回。
+    按 weight 将能力层级展开为子层级，分配 total_slots 个槽位，随机打乱后返回子层级名列表。
     与题型一致：每个 pair 从序列中按序取 questions_per_pair 个槽位。
     """
     if total_slots <= 0:
         return []
     if not ability_levels:
         return [None] * total_slots
-    allocated = _allocate_by_weight(ability_levels, total_slots, "weight")
+    expanded = _expand_ability_levels_to_sublevels(ability_levels)
+    if not expanded:
+        return [None] * total_slots
+    # 使用带 weight 的对象以复用 _allocate_by_weight
+    items = [SimpleNamespace(name=name, weight=w) for name, w in expanded]
+    allocated = _allocate_by_weight(items, total_slots, "weight")
+    names = [x.name for x in allocated]
     rng = random.Random(seed) if seed is not None else random
-    rng.shuffle(allocated)
-    return allocated[:total_slots]
+    rng.shuffle(names)
+    return names[:total_slots]
 
 
 def _get_type_specific_instructions(q_type_name: str) -> str:
@@ -208,16 +275,15 @@ def _get_type_specific_instructions(q_type_name: str) -> str:
 
 def _get_ability_level_prompt_for_batch(
     ability_levels: List[AbilityLevelItem],
-    target_ability: AbilityLevelItem | None,
+    target_ability: str | None,
 ) -> str:
     """为某一能力层级生成针对性的 Prompt 补充。若 target_ability 为 None，则要求覆盖多种能力层级。"""
     if not ability_levels:
         return ""
     if target_ability:
-        sc = "、".join(target_ability.sublevels) if target_ability.sublevels else "（无）"
         return (
-            f"\n\n【本批重点考察能力】{target_ability.name}（子层级：{sc}）\n"
-            f"题目应主要考察该能力层级，答案需体现对应思维层次。"
+            f"\n\n【本批重点考察能力】{target_ability}\n"
+            "题目应主要考察该能力层级，答案需体现对应思维层次。"
         )
     ability_str = _format_ability_levels_for_prompt(ability_levels)
     return (
@@ -247,6 +313,7 @@ def analyze_content_taxonomy(
 ) -> Tuple[List[str], str, bool]:
     """
     阶段1：分析两页内容属于哪些 taxonomy 小类。
+    白名单校验：返回的小类必须在 taxonomy 内；非法则重试最多 3 次，仍失败则 marked failed。
     Returns: (subcategories, page_info, failed)
     """
     path1, path2, page1, page2 = md_pair
@@ -255,6 +322,7 @@ def analyze_content_taxonomy(
     if not content.strip():
         return [], page_info, True
 
+    whitelist = _build_subcat_whitelist(taxonomy or [])
     tax_str = _format_taxonomy_for_prompt(taxonomy)
     sys_prompt = """你是学科教材内容分析专家。根据给定的学科分类体系，分析教材页面内容属于哪些知识小类。
 只输出 JSON 数组，包含匹配的小类名称，如 ["XXX", "XXXX"]。
@@ -268,24 +336,37 @@ def analyze_content_taxonomy(
 
 请输出匹配的小类名称 JSON 数组。"""
 
-    result = call_llm(sys_prompt, user_prompt, max_tokens=1024, temperature=0.2)
-    if not result:
-        return [], page_info, True
+    for attempt in range(4):  # 首次 + 3 次重试
+        result = call_llm(sys_prompt, user_prompt, max_tokens=1024, temperature=0.2)
+        if not result:
+            if attempt < 3:
+                time.sleep(get_api_delay())
+                continue
+            return [], page_info, True
 
-    try:
-        raw = result.strip()
-        if "```" in raw:
-            if "```json" in raw:
-                raw = raw.split("```json")[1].split("```")[0]
-            else:
-                raw = raw.split("```")[1].split("```")[0]
-        arr = json.loads(raw)
-        if not isinstance(arr, list):
-            arr = []
-        valid = [s for s in arr if isinstance(s, str) and s.strip()]
-        return valid if valid else [], page_info, False
-    except json.JSONDecodeError:
-        return [], page_info, True
+        try:
+            raw = result.strip()
+            if "```" in raw:
+                if "```json" in raw:
+                    raw = raw.split("```json")[1].split("```")[0]
+                else:
+                    raw = raw.split("```")[1].split("```")[0]
+            arr = json.loads(raw)
+            if not isinstance(arr, list):
+                arr = []
+            valid = [s.strip() for s in arr if isinstance(s, str) and s.strip()]
+            # 白名单校验：任一小类不在白名单内则重试
+            if valid and any(s not in whitelist for s in valid):
+                if attempt < 3:
+                    time.sleep(get_api_delay())
+                    continue
+                return [], page_info, True
+            return valid if valid else [], page_info, False
+        except json.JSONDecodeError:
+            # 解析失败不重试，直接 failed
+            return [], page_info, True
+
+    return [], page_info, True
 
 
 def _generate_questions_single_type(
@@ -294,14 +375,19 @@ def _generate_questions_single_type(
     q_type: QuestionType,
     count: int,
     ability_levels: List[AbilityLevelItem],
-    target_ability: AbilityLevelItem | None,
+    target_ability: str | None,
     page_info: str,
     content: str,
     sc_str: str,
+    subcat_to_cat: Dict[str, str],
+    subcat_whitelist: Optional[Set[str]] = None,
+    max_retries: int = 3,
 ) -> List[dict]:
     """
-    针对单一题型与（可选）目标能力层级生成题目，使用定制化 Prompt。
+    针对单一题型与（可选）目标能力子层级生成题目。当 target_ability 非空时，写死 ability_level 为该值。
+    白名单校验：subcategory 必须在 subcat_whitelist 内；非法则重试最多 max_retries 次，仍失败返回 []。
     """
+    whitelist = subcat_whitelist if subcat_whitelist is not None else (set(subcat_to_cat.keys()) | {"通用"})
     type_hint = _get_type_specific_instructions(q_type.name)
     ability_hint = _get_ability_level_prompt_for_batch(ability_levels, target_ability)
 
@@ -318,39 +404,60 @@ def _generate_questions_single_type(
 
 请生成 {count} 道【{q_type.name}】习题，输出纯 JSON 数组，每道题格式：
 {{"question": "题干", "answer": "标准答案", "type": "{q_type.name}", "subcategory": "小类名", "ability_level": "能力层级名或子层级名", "difficulty": "难/中/易"}}
-type 固定为 "{q_type.name}"，ability_level 从配置的能力层级或子层级中选择。"""
+type 固定为 "{q_type.name}"，ability_level 从配置的能力层级或子层级中选择。subcategory 必须从【知识小类】中选取。"""
 
-    result = call_llm(sys_prompt, user_prompt, max_tokens=4096, temperature=0.6)
-    if not result:
-        return []
-
-    try:
-        raw = result.strip()
-        if "```" in raw:
-            if "```json" in raw:
-                raw = raw.split("```json")[1].split("```")[0]
-            else:
-                raw = raw.split("```")[1].split("```")[0]
-        arr = json.loads(raw)
-        if not isinstance(arr, list):
-            arr = [arr] if arr else []
-        questions = []
-        for q in arr:
-            if not isinstance(q, dict) or not q.get("question"):
+    for attempt in range(max_retries + 1):
+        result = call_llm(sys_prompt, user_prompt, max_tokens=4096, temperature=0.6)
+        if not result:
+            if attempt < max_retries:
+                time.sleep(get_api_delay())
                 continue
-            questions.append({
-                "question": str(q.get("question", "")).strip(),
-                "answer": str(q.get("answer", "")).strip() or "无",
-                "type": q_type.name,
-                "subcategory": str(q.get("subcategory", sc_str)).strip(),
-                "ability_level": str(q.get("ability_level", "")).strip() or "通用",
-                "difficulty": str(q.get("difficulty", "中")).strip(),
-                "source_page": page_info,
-            })
-        time.sleep(get_api_delay())
-        return questions
-    except json.JSONDecodeError:
-        return []
+            return []
+
+        try:
+            raw = result.strip()
+            if "```" in raw:
+                if "```json" in raw:
+                    raw = raw.split("```json")[1].split("```")[0]
+                else:
+                    raw = raw.split("```")[1].split("```")[0]
+            arr = json.loads(raw)
+            if not isinstance(arr, list):
+                arr = [arr] if arr else []
+            questions = []
+            invalid = False
+            for q in arr:
+                if not isinstance(q, dict) or not q.get("question"):
+                    continue
+                # 槽位已分配目标能力时写死；无槽位（ability_levels 为空）默认不发生，用「通用」
+                final_level = target_ability if target_ability else "通用"
+                sc_final = str(q.get("subcategory", sc_str)).strip()
+                if sc_final not in whitelist:
+                    invalid = True
+                    break
+                questions.append({
+                    "question": str(q.get("question", "")).strip(),
+                    "answer": str(q.get("answer", "")).strip() or "无",
+                    "type": q_type.name,
+                    "subcategory": sc_final,
+                    "category": subcat_to_cat.get(sc_final, ""),
+                    "ability_level": final_level,
+                    "ability_main": _sublevel_to_main(final_level, ability_levels),
+                    "difficulty": str(q.get("difficulty", "中")).strip(),
+                    "source_page": page_info,
+                })
+            if invalid and attempt < max_retries:
+                time.sleep(get_api_delay())
+                continue
+            if invalid:
+                return []
+            time.sleep(get_api_delay())
+            return questions
+        except json.JSONDecodeError:
+            if attempt < max_retries:
+                time.sleep(get_api_delay())
+                continue
+            return []
 
 
 def generate_questions_for_balance(
@@ -359,10 +466,13 @@ def generate_questions_for_balance(
     q_type: QuestionType,
     target_ability_sublevel: str,
     count: int,
+    subcat_to_cat: Dict[str, str],
+    ability_levels: Optional[List[AbilityLevelItem]] = None,
 ) -> List[dict]:
     """
     为 Balancing 定向生成题目：指定题型与能力子层级。
     供 2.2 Balancing Operator 补题时调用。
+    白名单校验：subcategory 必须在 subcat_to_cat 或「通用」内；非法则重试最多 3 次，仍失败返回 []。
 
     Args:
         md_pair: 页面对 (path1, path2, page1, page2)
@@ -370,6 +480,8 @@ def generate_questions_for_balance(
         q_type: 目标题型
         target_ability_sublevel: 目标能力子层级名（如「结构与功能观」）
         count: 生成数量
+        subcat_to_cat: 小类->大类映射
+        ability_levels: 能力层级配置，用于反查 ability_main
 
     Returns:
         题目列表，格式与 generate_questions 一致
@@ -380,6 +492,7 @@ def generate_questions_for_balance(
     if not content.strip() or count <= 0:
         return []
 
+    whitelist = set(subcat_to_cat.keys()) | {"通用"}
     sc_str = "、".join(subcategories) if subcategories else "通用"
     type_hint = _get_type_specific_instructions(q_type.name)
     ability_hint = (
@@ -399,40 +512,59 @@ def generate_questions_for_balance(
 【知识小类】{sc_str}
 
 请生成 {count} 道【{q_type.name}】习题，输出纯 JSON 数组，每道题格式：
-{{"question": "题干", "answer": "标准答案", "type": "{q_type.name}", "subcategory": "小类名", "ability_level": "{target_ability_sublevel}", "difficulty": "难/中/易"}}
-type 固定为 "{q_type.name}"，ability_level 固定为 "{target_ability_sublevel}"。"""
+{{"question": "题干", "answer": "标准答案", "type": "{q_type.name}", "subcategory": "小类名", "difficulty": "难/中/易"}}
+type 固定为 "{q_type.name}"。subcategory 必须从【知识小类】中选取。"""
 
-    result = call_llm(sys_prompt, user_prompt, max_tokens=4096, temperature=0.6)
-    if not result:
-        return []
-
-    try:
-        raw = result.strip()
-        if "```" in raw:
-            if "```json" in raw:
-                raw = raw.split("```json")[1].split("```")[0]
-            else:
-                raw = raw.split("```")[1].split("```")[0]
-        arr = json.loads(raw)
-        if not isinstance(arr, list):
-            arr = [arr] if arr else []
-        questions = []
-        for q in arr:
-            if not isinstance(q, dict) or not q.get("question"):
+    for attempt in range(4):  # 首次 + 3 次重试
+        result = call_llm(sys_prompt, user_prompt, max_tokens=4096, temperature=0.6)
+        if not result:
+            if attempt < 3:
+                time.sleep(get_api_delay())
                 continue
-            questions.append({
-                "question": str(q.get("question", "")).strip(),
-                "answer": str(q.get("answer", "")).strip() or "无",
-                "type": q_type.name,
-                "subcategory": str(q.get("subcategory", sc_str)).strip(),
-                "ability_level": str(q.get("ability_level", target_ability_sublevel)).strip() or target_ability_sublevel,
-                "difficulty": str(q.get("difficulty", "中")).strip(),
-                "source_page": page_info,
-            })
-        time.sleep(get_api_delay())
-        return questions
-    except json.JSONDecodeError:
-        return []
+            return []
+
+        try:
+            raw = result.strip()
+            if "```" in raw:
+                if "```json" in raw:
+                    raw = raw.split("```json")[1].split("```")[0]
+                else:
+                    raw = raw.split("```")[1].split("```")[0]
+            arr = json.loads(raw)
+            if not isinstance(arr, list):
+                arr = [arr] if arr else []
+            questions = []
+            invalid = False
+            for q in arr:
+                if not isinstance(q, dict) or not q.get("question"):
+                    continue
+                sc_final = str(q.get("subcategory", sc_str)).strip()
+                if sc_final not in whitelist:
+                    invalid = True
+                    break
+                questions.append({
+                    "question": str(q.get("question", "")).strip(),
+                    "answer": str(q.get("answer", "")).strip() or "无",
+                    "type": q_type.name,
+                    "subcategory": sc_final,
+                    "category": subcat_to_cat.get(sc_final, ""),
+                    "ability_level": target_ability_sublevel,
+                    "ability_main": _sublevel_to_main(target_ability_sublevel, ability_levels or []),
+                    "difficulty": str(q.get("difficulty", "中")).strip(),
+                    "source_page": page_info,
+                })
+            if invalid and attempt < 3:
+                time.sleep(get_api_delay())
+                continue
+            if invalid:
+                return []
+            time.sleep(get_api_delay())
+            return questions
+        except json.JSONDecodeError:
+            if attempt < 3:
+                time.sleep(get_api_delay())
+                continue
+            return []
 
 
 def generate_questions(
@@ -441,7 +573,10 @@ def generate_questions(
     question_types: List[QuestionType],
     ability_levels: List[AbilityLevelItem],
     num_questions: int,
-    allocation: Optional[List[Tuple[QuestionType, int]]] = None,
+    allocation: Optional[
+        List[Union[Tuple[QuestionType, int, Optional[str]], Tuple[QuestionType, int]]]
+    ] = None,
+    taxonomy: Optional[List[TaxonomyItem]] = None,
 ) -> List[dict]:
     """
     阶段2：根据 content、小类、题型分配，使用题型与能力层级不同的 Prompt 生成题目。
@@ -455,6 +590,8 @@ def generate_questions(
         return []
 
     sc_str = "、".join(subcategories) if subcategories else "通用"
+    subcat_to_cat = _build_subcat_to_category(taxonomy or [])
+    subcat_whitelist = _build_subcat_whitelist(taxonomy or [])
     if allocation is None or not allocation:
         if question_types:
             allocation = [(question_types[0], num_questions)]
@@ -462,15 +599,9 @@ def generate_questions(
             return []
 
     all_questions = []
-    ability_list = ability_levels or []
-    # 按 weight 将能力层级分配到各题型批次，无 weight 或全 0 时等分
-    ability_sequence = (
-        _allocate_by_weight(ability_list, len(allocation), "weight")
-        if ability_list
-        else [None] * len(allocation)
-    )
-    for i, (q_type, count) in enumerate(allocation):
-        target_ability = ability_sequence[i] if i < len(ability_sequence) else None
+    for item in allocation:
+        q_type, count = item[0], item[1]
+        target_ability = item[2] if len(item) >= 3 else None
         qs = _generate_questions_single_type(
             md_pair=md_pair,
             subcategories=subcategories,
@@ -481,6 +612,8 @@ def generate_questions(
             page_info=page_info,
             content=content,
             sc_str=sc_str,
+            subcat_to_cat=subcat_to_cat,
+            subcat_whitelist=subcat_whitelist,
         )
         all_questions.extend(qs)
 
@@ -499,13 +632,17 @@ def process_page_pair_stage2(
     question_types: List[QuestionType],
     ability_levels: List[AbilityLevelItem],
     num_questions: int,
-    allocation: Optional[List[Tuple[QuestionType, int]]] = None,
+    allocation: Optional[
+        List[Union[Tuple[QuestionType, int, Optional[str]], Tuple[QuestionType, int]]]
+    ] = None,
+    taxonomy: Optional[List[TaxonomyItem]] = None,
 ):
     """阶段2 单对处理。Returns: (questions, page_info)."""
     if not subcategories:
         subcategories = ["通用"]
     questions = generate_questions(
-        pair_data, subcategories, question_types, ability_levels, num_questions, allocation=allocation
+        pair_data, subcategories, question_types, ability_levels, num_questions,
+        allocation=allocation, taxonomy=taxonomy,
     )
     _, _, page1, page2 = pair_data
     page_info = f"{page1}-{page2}" if page2 else str(page1)
@@ -697,6 +834,7 @@ def run_stage2(
     else:
         total_slots = len(indices_to_process) * questions_per_pair
         type_sequence = _build_shuffled_type_sequence(question_types, total_slots, seed=42)
+        ability_sequence = _build_shuffled_ability_sequence(ability_levels or [], total_slots, seed=42)
         sorted_indices = sorted(indices_to_process)
         rank_of_idx = {idx: k for k, idx in enumerate(sorted_indices)}
 
@@ -710,8 +848,9 @@ def run_stage2(
                 subcats = ["通用"]
             rank = rank_of_idx.get(idx, 0)
             offset = rank * questions_per_pair
-            allocation_slice = type_sequence[offset : offset + questions_per_pair]
-            allocation = [(t, 1) for t in allocation_slice]
+            type_slice = type_sequence[offset : offset + questions_per_pair]
+            ability_slice = ability_sequence[offset : offset + questions_per_pair]
+            allocation = [(type_slice[i], 1, ability_slice[i]) for i in range(questions_per_pair)]
             qs, _ = process_page_pair_stage2(
                 pair,
                 subcats,
@@ -719,6 +858,7 @@ def run_stage2(
                 ability_levels,
                 questions_per_pair,
                 allocation=allocation,
+                taxonomy=config.taxonomy,
             )
             return idx, qs
 
@@ -762,7 +902,7 @@ def run_stage2(
     excel_path = os.path.join(stage2_dir, f"{folder_name}_generated_questions.xlsx")
     json_path = os.path.join(stage2_dir, f"{folder_name}_generated_questions.json")
 
-    # Excel：题目、标准答案、题型、知识小类、能力层级、难度、来源页码
+    # Excel：题目、标准答案、题型、知识大类、知识小类、能力层级、能力主层级、难度、来源页码
     rows = []
     for i, q in enumerate(all_questions, 1):
         rows.append({
@@ -770,8 +910,10 @@ def run_stage2(
             "题目": q.get("question", ""),
             "标准答案": q.get("answer", ""),
             "题型": q.get("type", ""),
+            "知识大类": q.get("category", ""),
             "知识小类": q.get("subcategory", ""),
             "能力层级": q.get("ability_level", "通用"),
+            "能力主层级": q.get("ability_main", ""),
             "难度": q.get("difficulty", "中"),
             "来源页码": q.get("source_page", ""),
         })

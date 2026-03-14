@@ -66,7 +66,8 @@ class BalancingConfig:
 
     output_dir: str = "dataflow_edu/data/generation_and_balancing"
     sample_size: int = 32
-    max_iterations: int = 10
+    max_iterations: int = 30
+    questions_per_round: int = 10
     max_per_sublevel_iterations: int = 2
     tolerance: float = 0.03
     excluded_ability_sublevels: List[str] = field(default_factory=list)
@@ -80,7 +81,44 @@ class AmbiguityCleaningConfig:
     input_dir: str = "dataflow_edu/data/generation_and_balancing/2_2_balanced"
     max_workers: int = 8
     max_retries: int = 3
-    threshold_remove: int = 2  # 1-2 分剔除
+    threshold_remove: int = 1  # 1 分剔除
+
+
+@dataclass
+class AmbiguityRefinementConfig:
+    """3.2 Ambiguity Refinement Operator 参数。"""
+
+    input_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned"
+    output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined"
+    max_workers: int = 8
+    max_retries: int = 3
+    target_scores: List[int] = field(default_factory=lambda: [2, 3])  # 2–3 分题做 LLM 优化
+    threshold_discard: int = 2  # 精修后重评，≤此分丢弃（与 ambiguity cleaning 一致）
+
+
+@dataclass
+class DomainCleaningConfig:
+    """3.3 Domain Cleaning Operator 参数。"""
+
+    input_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined"
+    output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned"
+    max_workers: int = 8
+    max_retries: int = 3
+    threshold_remove: int = 1  # 1 分剔除
+    domain_name: str = "生物学"
+
+
+@dataclass
+class DomainRefinementConfig:
+    """3.4 Domain Refinement Operator 参数。"""
+
+    input_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned"
+    output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined"
+    max_workers: int = 8
+    max_retries: int = 3
+    target_scores: List[int] = field(default_factory=lambda: [2, 3])  # 2–3 分题做 LLM 优化
+    threshold_discard: int = 1  # 精修后重评，≤此分丢弃（与 domain cleaning 一致）
+    domain_name: str = "生物学"
 
 
 @dataclass
@@ -137,5 +175,8 @@ def default_config() -> EduConfig:
             "generation": GenerationConfig(),
             "balancing": BalancingConfig(),
             "ambiguity_cleaning": AmbiguityCleaningConfig(),
+            "ambiguity_refinement": AmbiguityRefinementConfig(),
+            "domain_cleaning": DomainCleaningConfig(),
+            "domain_refinement": DomainRefinementConfig(),
         },
     )

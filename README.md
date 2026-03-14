@@ -25,7 +25,7 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
 这一阶段主要解决「考什么」和「从哪取数据」的问题。
 
-- **1.1 Configuration Manager：** 支持灵活配置“考察知识方向（大类-小类双层架构）” + “考察能力层级（建议也是双层架构）” + “考察形式（题型）”。同时支持配置Pipeline 和各 Operator 的参数。注意这部分是用户手动配置。
+- **1.1 Configuration Manager：** 支持灵活配置“考察知识方向（大类-小类双层架构）” + “考察能力层级（也是主层级-子层级双层架构）” + “考察形式（题型）”。同时支持配置Pipeline 和各 Operator 的参数。注意这部分是用户手动配置。
 - **1.2 MinerU OCR Operator：** 批量输入高质量教材PDF图片（图片直接用wps的pdf转图片功能），调用 MinerU 引擎的批量处理 API，利用通用数据算子对每页提取文本、表格和复杂图文对，并清洗为标准化的 Markdown 格式。
 
 ### 阶段二：Generation & Balancing 
@@ -34,8 +34,8 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
 基于config Manager配置的“考察知识方向（大类-小类）” + “考察能力层级（建议双层架构）” + “考察形式（题型）” 的系统设计与评测维度 
 
-- **2.1 Generation Operator：** 将解析后的文本按「每两页为一组」进行组合，作为 Context 输入给大模型，stage 1 判断该组合最适合的考察知识方向，stage 2 基于 configuration 进行批量化的习题与答案生成，并基于configuration中的能力层级和题型提供给大模型不同的Prompt，初步控制 “考察能力层级（建议也是双层架构）” + “考察形式（题型）”的分布。
-- **2.2 Balancing Operator：** 基于 configuration，用于实现考察能力层级、题型分布不均衡时的补题。（注意对于知识方向的均衡程度也要分析，但是需要给用户建议让其增加相关语料而不是强制生成某个知识方向的题目）
+- **2.1 Generation Operator：** 将解析后的文本按「每两页为一组」进行组合，作为 Context 输入给大模型，stage 1 判断该组合最适合的考察知识方向，stage 2 基于 configuration 进行批量化的习题与答案生成，并基于configuration中的能力层级和题型提供给大模型不同的Prompt，初步控制 “考察能力层级（建议也是双层架构）” + “考察形式（题型）”的分布（【2026-3-15更新】能力层级的分布控制，通过随机槽机制实现）
+- **2.2 Balancing Operator：** 基于 configuration，用于实现考察能力层级、题型分布不均衡时的补题。（注意对于知识方向的均衡程度也要分析，但是需要给用户建议让其增加相关语料而不是强制生成某个知识方向的题目）（【2026-3-15更新】注意，这个算子已经基本不再具有使用价值，因为我们在2.1阶段已经基于随机槽机制实现了精准的能力层级分布控制，而且题型在生成时也是写死的，不依赖 LLM 返回。现在这个算子的意义是提示用户知识方向的分布是否均衡。）
 
 ### 阶段三：Cleaning & Refinement
 
@@ -50,7 +50,9 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 - **3.7 Translation Operator：** 执行多语言翻译，默认支持英法两种语言。支持检查残留源语言文本重新翻译。
 - **3.8 MCQ Verify Operator：** 专为选择题设计的清洗算子，检查选择题是否包含 ABCD 四个选项，没有的补上。optimize_answers有validate_choice_questions（检查ABCD）、complete_choice_options（缺失时补全）。
 
-* 阶段一、二、三的执行过程中，基于utils_from_CNLaw-Bench\stage_viewer.html的样式（同时借鉴DataFlow项目的WebUI中的功能，有做得好的要加上），设计一个统一的面板，可以看到各个节点的情况，尤其是Configuration Manager. 这个后面再做
+>   阶段一、二、三的执行过程中，基于utils_from_CNLaw-Bench\stage_viewer.html的样式（同时借鉴DataFlow项目的WebUI中的功能，有做得好的要加上），设计一个统一的面板，可以看到各个节点的情况，尤其是Configuration Manager. 这个后面再做
+
+> 建议注意，有能提升难度的地方可以自己改一下，比如生成一些东西的时候.txt
 
 ### 阶段四：Execute & Judge
 

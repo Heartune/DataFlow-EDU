@@ -105,7 +105,34 @@ operators:
   balancing:
     output_dir: dataflow_edu/data/generation_and_balancing
     sample_size: 32
-    max_iterations: 10
+    max_iterations: 30
+    questions_per_round: 10
     max_per_sublevel_iterations: 2
     tolerance: 0.03
     excluded_ability_sublevels: []
+  ambiguity_cleaning:
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+  ambiguity_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+  domain_cleaning:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+    domain_name: 生物学
+  domain_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+    domain_name: 生物学

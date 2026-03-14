@@ -2,9 +2,10 @@
 """
 3.1 Ambiguity Cleaning Operator - 二义性检查与低质量样本剔除
 
-基于 LLM 5 点制二义性评估，剔除 1–2 分样本，保留中高质量题目。
+基于 LLM 5 点制二义性评估，剔除 1 分样本，保留 2–5 分题目。
 """
 
+import json
 import os
 
 from dataflow import get_logger
@@ -12,6 +13,7 @@ from dataflow.core import OperatorABC
 from dataflow.utils.registry import OPERATOR_REGISTRY
 
 from dataflow_edu.ambiguity_cleaning.core import (
+    _print_ambiguity_distribution,
     _scan_cleaning_candidates,
     run_ambiguity_cleaning,
 )
@@ -42,7 +44,7 @@ def _display_cleaning_table(candidates: list, input_dir: str, output_dir: str):
 class AmbiguityCleaningOperator(OperatorABC):
     """
     3.1 Ambiguity Cleaning Operator：检查二义性并剔除低质量样本。
-    基于 LLM 5 点制评分，剔除 1–2 分样本；支持 resume、用户确认、单独保存剔除样本。
+    基于 LLM 5 点制评分，剔除 1 分样本；支持 resume、用户确认、单独保存剔除样本。
     """
 
     def __init__(
@@ -62,7 +64,7 @@ class AmbiguityCleaningOperator(OperatorABC):
         if lang == "zh":
             return (
                 "3.1 Ambiguity Cleaning Operator：基于 LLM 5 点制二义性评估，"
-                "剔除低质量样本（1–2 分）。支持 resume、用户确认、单独保存剔除样本。"
+                "剔除低质量样本（1 分）。支持 resume、用户确认、单独保存剔除样本。"
             )
         return "3.1 Ambiguity Cleaning Operator: remove low-quality samples by ambiguity score."
 
@@ -97,7 +99,7 @@ class AmbiguityCleaningOperator(OperatorABC):
                 input_dir=str(amb_cfg.get("input_dir", self.input_dir)),
                 max_workers=int(amb_cfg.get("max_workers", self.max_workers)),
                 max_retries=int(amb_cfg.get("max_retries", 3)),
-                threshold_remove=int(amb_cfg.get("threshold_remove", 2)),
+                threshold_remove=int(amb_cfg.get("threshold_remove", AmbiguityCleaningConfig().threshold_remove)),
             )
         elif not isinstance(amb_cfg, AmbiguityCleaningConfig):
             amb_cfg = AmbiguityCleaningConfig(
@@ -162,6 +164,12 @@ class AmbiguityCleaningOperator(OperatorABC):
             resume=resume,
             no_confirm=no_confirm,
         )
-        if ok:
+        if ok and cleaned_path and os.path.isfile(cleaned_path):
+            try:
+                with open(cleaned_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                _print_ambiguity_distribution(data.get("questions", []))
+            except Exception:
+                pass
             print(f"\n3.1 Ambiguity Cleaning 完成: {cleaned_path}")
         return ok, cleaned_path, removed_path

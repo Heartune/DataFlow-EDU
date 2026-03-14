@@ -6,6 +6,7 @@ import os
 from dataflow_edu.config.loader import get_config_path, load_config, save_config
 from dataflow_edu.config.schema import (
     AbilityLevelItem,
+    BalancingConfig,
     EduConfig,
     MinerUOCRConfig,
     QuestionType,
@@ -30,7 +31,8 @@ def _show_submenu():
     print("  3  管理题型池")
     print("  4  管理能力层级")
     print("  5  管理 1.2 MinerU 参数")
-    print("  6  校验并保存")
+    print("  6  管理 2.2 Balancing 参数")
+    print("  7  校验并保存")
     print("  0  返回主菜单")
     print("-" * 50)
 
@@ -54,6 +56,11 @@ def _show_config(config: EduConfig):
     print(f"  batch_size: {mp.batch_size}, poll_interval: {mp.poll_interval}, poll_timeout: {mp.poll_timeout}")
     print(f"  skip_existing: {mp.skip_existing}, language: {mp.language}")
     print(f"  enable_formula: {mp.enable_formula}, enable_table: {mp.enable_table}")
+    print("\n【2.2 Balancing 参数】")
+    bc = config.operators.get("balancing", BalancingConfig())
+    print(f"  max_iterations: {bc.max_iterations}, questions_per_round: {bc.questions_per_round}")
+    print(f"  sample_size: {bc.sample_size}, max_per_sublevel_iterations: {bc.max_per_sublevel_iterations}")
+    print(f"  tolerance: {bc.tolerance}, excluded: {bc.excluded_ability_sublevels or '无'}")
     print()
 
 
@@ -311,6 +318,47 @@ def _manage_mineru_params(config: EduConfig) -> EduConfig:
     return config
 
 
+def _manage_balancing_params(config: EduConfig) -> EduConfig:
+    """管理 2.2 Balancing 参数。"""
+    bc = config.operators.get("balancing", BalancingConfig())
+    if "balancing" not in config.operators:
+        config.operators["balancing"] = bc
+
+    print("\n【管理 2.2 Balancing 参数】")
+    mi = input(f"  max_iterations (最大迭代轮数) [{bc.max_iterations}]: ").strip()
+    if mi:
+        try:
+            bc.max_iterations = int(mi)
+        except ValueError:
+            print("  无效数字，已忽略。")
+    qpr = input(f"  questions_per_round (每轮补题数) [{bc.questions_per_round}]: ").strip()
+    if qpr:
+        try:
+            bc.questions_per_round = int(qpr)
+        except ValueError:
+            print("  无效数字，已忽略。")
+    ss = input(f"  sample_size [{bc.sample_size}]: ").strip()
+    if ss:
+        try:
+            bc.sample_size = int(ss)
+        except ValueError:
+            print("  无效数字，已忽略。")
+    mps = input(f"  max_per_sublevel_iterations (单子层级最大轮数) [{bc.max_per_sublevel_iterations}]: ").strip()
+    if mps:
+        try:
+            bc.max_per_sublevel_iterations = int(mps)
+        except ValueError:
+            print("  无效数字，已忽略。")
+    tol = input(f"  tolerance (容差 0~1) [{bc.tolerance}]: ").strip()
+    if tol:
+        try:
+            bc.tolerance = float(tol)
+        except ValueError:
+            print("  无效数字，已忽略。")
+    print("  已更新。")
+    return config
+
+
 def _validate_and_save(config: EduConfig) -> EduConfig:
     """校验配置并保存。"""
     is_valid, errors = validate_config(config, project_root=_PROJECT_ROOT, check_paths=False)
@@ -352,6 +400,8 @@ def run_config_manager():
         elif choice == "5":
             config = _manage_mineru_params(config)
         elif choice == "6":
+            config = _manage_balancing_params(config)
+        elif choice == "7":
             config = _validate_and_save(config)
         else:
             print("无效选项。")
