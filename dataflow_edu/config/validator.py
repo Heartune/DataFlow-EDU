@@ -55,25 +55,25 @@ def validate_config(
     if config.ability_levels and abs(abl_weight_sum - 1.0) > 0.001:
         errors.append(f"ability_levels: 权重之和应为 1.0，当前为 {abl_weight_sum:.3f}")
 
-    # mineru_parsing
-    mp = config.operators.get("mineru_parsing")
+    # mineru_ocr
+    mp = config.operators.get("mineru_ocr")
     if mp:
         if not mp.img_dir or not str(mp.img_dir).strip():
-            errors.append("operators.mineru_parsing: img_dir 不能为空")
+            errors.append("operators.mineru_ocr: img_dir 不能为空")
         if not mp.md_dir or not str(mp.md_dir).strip():
-            errors.append("operators.mineru_parsing: md_dir 不能为空")
+            errors.append("operators.mineru_ocr: md_dir 不能为空")
         if mp.batch_size < 1 or mp.batch_size > 200:
-            errors.append("operators.mineru_parsing: batch_size 应在 1~200 之间")
+            errors.append("operators.mineru_ocr: batch_size 应在 1~200 之间")
         if mp.poll_interval < 1:
-            errors.append("operators.mineru_parsing: poll_interval 应 >= 1")
+            errors.append("operators.mineru_ocr: poll_interval 应 >= 1")
         if mp.poll_timeout < 10:
-            errors.append("operators.mineru_parsing: poll_timeout 应 >= 10")
+            errors.append("operators.mineru_ocr: poll_timeout 应 >= 10")
         if mp.language not in ("ch", "en"):
-            errors.append("operators.mineru_parsing: language 应为 ch 或 en")
+            errors.append("operators.mineru_ocr: language 应为 ch 或 en")
 
         if check_paths and project_root:
             img_abs = mp.img_dir if os.path.isabs(mp.img_dir) else os.path.join(project_root, mp.img_dir)
             if not os.path.isdir(img_abs):
-                errors.append(f"operators.mineru_parsing: img_dir 不存在: {img_abs}")
+                errors.append(f"operators.mineru_ocr: img_dir 不存在: {img_abs}")
 
     return len(errors) == 0, errors

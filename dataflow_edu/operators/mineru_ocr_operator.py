@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-MinerU Parsing Operator - 教材图片批量解析为 Markdown
+MinerU OCR Operator - 教材图片批量解析为 Markdown
 
 沿用 textbook/img 目录结构，调用 MinerU 云服务 API，
 将教材图片解析为标准化 Markdown 格式并落盘。
@@ -26,7 +26,7 @@ import mineru_ocr  # noqa: E402
 
 
 @OPERATOR_REGISTRY.register()
-class MinerUParsingOperator(OperatorABC):
+class MinerUOCROperator(OperatorABC):
     """
     教材图片批量解析算子：扫描 img_dir 下教材子目录，交互式选择后，
     调用 MinerU API 将图片转为 Markdown，保存到 md_dir。
@@ -60,7 +60,7 @@ class MinerUParsingOperator(OperatorABC):
     def get_desc(lang: str = "zh"):
         if lang == "zh":
             return (
-                "MinerU Parsing Operator：批量输入教材图片，调用 MinerU 云服务 API，"
+                "MinerU OCR Operator：批量输入教材图片，调用 MinerU 云服务 API，"
                 "提取文本、表格和复杂图文对，输出标准化 Markdown 文件。\n\n"
                 "输入形式：沿用 textbook/img 目录结构，算子接收 img_dir、md_dir 两个路径，"
                 "自动扫描子目录（每本教材一个子目录，内含 png/jpg 图片）。\n\n"
@@ -81,7 +81,7 @@ class MinerUParsingOperator(OperatorABC):
             )
         elif lang == "en":
             return (
-                "MinerU Parsing Operator: Batch input of textbook images, calls MinerU cloud API "
+                "MinerU OCR Operator: Batch input of textbook images, calls MinerU cloud API "
                 "to extract text, tables, and complex image-text pairs into standardized Markdown.\n\n"
                 "Input: textbook/img directory structure; operator receives img_dir and md_dir.\n\n"
                 "Output: Markdown files written to md_dir; downstream operators read the directory.\n\n"
@@ -90,7 +90,7 @@ class MinerUParsingOperator(OperatorABC):
                 "language, enable_formula, enable_table\n\n"
                 "run params: storage, img_dir, md_dir"
             )
-        return "MinerU Parsing Operator for textbook images to Markdown."
+        return "MinerU OCR Operator for textbook images to Markdown."
 
     def run(
         self,

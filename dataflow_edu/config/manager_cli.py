@@ -7,7 +7,7 @@ from dataflow_edu.config.loader import get_config_path, load_config, save_config
 from dataflow_edu.config.schema import (
     AbilityLevelItem,
     EduConfig,
-    MineruConfig,
+    MinerUOCRConfig,
     QuestionType,
     TaxonomyItem,
     default_config,
@@ -48,7 +48,7 @@ def _show_config(config: EduConfig):
         sc = "、".join(a.sublevels) if a.sublevels else "（无）"
         print(f"  - {a.name}: weight={a.weight}, {sc}")
     print("\n【1.2 MinerU 参数】")
-    mp = config.operators.get("mineru_parsing", MineruConfig())
+    mp = config.operators.get("mineru_ocr", MinerUOCRConfig())
     print(f"  img_dir: {mp.img_dir}")
     print(f"  md_dir: {mp.md_dir}")
     print(f"  batch_size: {mp.batch_size}, poll_interval: {mp.poll_interval}, poll_timeout: {mp.poll_timeout}")
@@ -260,9 +260,9 @@ def _manage_ability_levels(config: EduConfig) -> EduConfig:
 
 def _manage_mineru_params(config: EduConfig) -> EduConfig:
     """管理 1.2 MinerU 参数。"""
-    mp = config.operators.get("mineru_parsing", MineruConfig())
-    if "mineru_parsing" not in config.operators:
-        config.operators["mineru_parsing"] = mp
+    mp = config.operators.get("mineru_ocr", MinerUOCRConfig())
+    if "mineru_ocr" not in config.operators:
+        config.operators["mineru_ocr"] = mp
 
     print("\n【管理 1.2 MinerU 参数】")
     img_dir = input(f"  img_dir [{mp.img_dir}]: ").strip()

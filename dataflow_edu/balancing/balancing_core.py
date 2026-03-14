@@ -247,9 +247,12 @@ class BalancingBalancer:
     def get_gaps(self) -> List[Tuple[str, str, int]]:
         """
         获取需要补题的 (sublevel_id, q_type_name, gap_count) 列表，按缺口降序。
+        行/列约束：若子层级总量或题型总量已超过目标+容差，则该子层级/题型不再补题。
         """
         dist = self.calculate_distribution()
         total = dist["total"]
+        tolerance = self.bal_cfg.tolerance
+
         if total <= 0:
             gaps = []
             for sid, sname, tr in self.sublevel_targets:
@@ -261,6 +264,23 @@ class BalancingBalancer:
             gaps.sort(key=lambda x: -x[2])
             return gaps
 
+        # 计算已超标的子层级、题型（当前占比 > 目标占比 + 容差）
+        over_sublevels: Set[str] = set()
+        if self.balance_ability:
+            for sid, _, tr in self.sublevel_targets:
+                if sid in self.excluded:
+                    continue
+                cur_ratio = dist["sublevels"].get(sid, 0) / total
+                if cur_ratio > tr + tolerance:
+                    over_sublevels.add(sid)
+
+        over_qtypes: Set[str] = set()
+        if self.balance_type:
+            for qt, qtr in self.qtype_targets.items():
+                cur_ratio = dist["qtypes"].get(qt, 0) / total
+                if cur_ratio > qtr + tolerance:
+                    over_qtypes.add(qt)
+
         first_sid = next(
             (s for s, sn, _ in self.sublevel_targets if s not in self.excluded and sn not in self.excluded),
             None,
@@ -270,9 +290,11 @@ class BalancingBalancer:
         gaps = []
         if self.balance_ability and self.balance_type:
             for sid, sname, tr in self.sublevel_targets:
-                if sid in self.excluded or sname in self.excluded:
+                if sid in self.excluded or sname in self.excluded or sid in over_sublevels:
                     continue
                 for qt, qtr in self.qtype_targets.items():
+                    if qt in over_qtypes:
+                        continue
                     target_count = max(1, int(total * tr * qtr))
                     current = self._count_sublevel_qtype(sid, sname, qt)
                     gap = target_count - current
@@ -280,7 +302,7 @@ class BalancingBalancer:
                         gaps.append((sid, qt, gap))
         elif self.balance_ability and not self.balance_type:
             for sid, sname, tr in self.sublevel_targets:
-                if sid in self.excluded or sname in self.excluded:
+                if sid in self.excluded or sname in self.excluded or sid in over_sublevels:
                     continue
                 target_count = max(1, int(total * tr))
                 current = dist["sublevels"].get(sid, 0)
@@ -289,6 +311,8 @@ class BalancingBalancer:
                     gaps.append((sid, first_qt, gap))
         elif not self.balance_ability and self.balance_type:
             for qt, qtr in self.qtype_targets.items():
+                if qt in over_qtypes:
+                    continue
                 target_count = max(1, int(total * qtr))
                 current = dist["qtypes"].get(qt, 0)
                 gap = target_count - current
@@ -302,10 +326,11 @@ class BalancingBalancer:
         asked = self.asked_pairs.get((sublevel_id, q_type_name), set())
         return [i for i in range(self.total_pairs) if i not in asked]
 
-    def check_suitability(self, pair_index: int, sublevel_id: str, sublevel_name: str, q_type_name: str) -> bool:
+    def _check_suitability_impl(
+        self, pair_index: int, sublevel_name: str, q_type_name: str
+    ) -> bool:
+        """仅执行 LLM 适宜性判断，不修改 asked_pairs。"""
         pair_info = self.pairs_data[pair_index]
-        self.asked_pairs.setdefault((sublevel_id, q_type_name), set()).add(pair_index)
-
         md_pair = _pair_info_to_md_pair(pair_info)
         if not md_pair:
             return False
@@ -314,6 +339,10 @@ class BalancingBalancer:
             return False
         page_info = str(pair_info.get("page_info", ""))
         return _check_suitability_md(content, sublevel_name, q_type_name, page_info)
+
+    def check_suitability(self, pair_index: int, sublevel_id: str, sublevel_name: str, q_type_name: str) -> bool:
+        self.asked_pairs.setdefault((sublevel_id, q_type_name), set()).add(pair_index)
+        return self._check_suitability_impl(pair_index, sublevel_name, q_type_name)
 
     def sample_and_check(
         self,
@@ -327,10 +356,24 @@ class BalancingBalancer:
             return []
         sample_count = min(sample_size, len(available))
         sampled = random.sample(available, sample_count)
+
+        def task(idx: int) -> tuple:
+            ok = self._check_suitability_impl(idx, sublevel_name, q_type_name)
+            return idx, ok
+
         suitable = []
+        with ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+            futures = {ex.submit(task, idx): idx for idx in sampled}
+            for fut in as_completed(futures):
+                try:
+                    idx, ok = fut.result()
+                    if ok:
+                        suitable.append(idx)
+                except Exception:
+                    pass
+
         for idx in sampled:
-            if self.check_suitability(idx, sublevel_id, sublevel_name, q_type_name):
-                suitable.append(idx)
+            self.asked_pairs.setdefault((sublevel_id, q_type_name), set()).add(idx)
         return suitable
 
     def generate_bu_ti(
@@ -466,18 +509,36 @@ class BalancingBalancer:
                 print("  ⚠️ 无适合页面")
                 continue
 
-            self.sublevel_iterations[sid] = self.sublevel_iterations.get(sid, 0) + 1
-            added = 0
             per_pair = min(2, max(1, gap // len(suitable) + 1))
+            tasks_built = min(len(suitable), (gap + per_pair - 1) // per_pair)
+            print(f"  ✓ 适宜性筛选: 采样 {sample_size} 对 → 适合 {len(suitable)} 对 | 每对最多生成 {per_pair} 道 | 启用 {tasks_built} 对生成")
+
+            self.sublevel_iterations[sid] = self.sublevel_iterations.get(sid, 0) + 1
+            tasks = []
+            remaining = gap
             for idx in suitable:
-                if added >= gap:
+                if remaining <= 0:
                     break
-                n = min(per_pair, gap - added)
-                qs = self.generate_bu_ti(idx, sid, sublevel_name, q_type, n)
-                if qs:
-                    self.questions.extend(qs)
-                    added += len(qs)
-                    self.bu_ti_count += len(qs)
+                n = min(per_pair, remaining)
+                tasks.append((idx, n))
+                remaining -= n
+
+            def task(t: tuple):
+                i, cnt = t
+                return self.generate_bu_ti(i, sid, sublevel_name, q_type, cnt)
+
+            added = 0
+            with ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+                futures = {ex.submit(task, t): t for t in tasks}
+                for fut in as_completed(futures):
+                    try:
+                        qs = fut.result()
+                        if qs:
+                            self.questions.extend(qs)
+                            added += len(qs)
+                            self.bu_ti_count += len(qs)
+                    except Exception:
+                        pass
 
             print(f"  本轮补题: {added} 道")
             self.print_distribution()
@@ -543,7 +604,7 @@ def run_balancing(
     bal_cfg = balancing_config or config.operators.get("balancing")
     if isinstance(bal_cfg, dict):
         bal_cfg = BalancingConfig(
-            output_dir=bal_cfg.get("output_dir", "dataflow_edu/data/generated_and_balanced"),
+            output_dir=bal_cfg.get("output_dir", "dataflow_edu/data/generation_and_balancing"),
             sample_size=int(bal_cfg.get("sample_size", 32)),
             max_iterations=int(bal_cfg.get("max_iterations", 10)),
             max_per_sublevel_iterations=int(bal_cfg.get("max_per_sublevel_iterations", 2)),

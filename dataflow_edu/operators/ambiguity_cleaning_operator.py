@@ -47,8 +47,8 @@ class AmbiguityCleaningOperator(OperatorABC):
 
     def __init__(
         self,
-        output_dir: str = "dataflow_edu/data/cleaned_and_refined/3_1_ambiguity_cleaned",
-        input_dir: str = "dataflow_edu/data/generated_and_balanced/2_2_balanced",
+        output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned",
+        input_dir: str = "dataflow_edu/data/generation_and_balancing/2_2_balanced",
         max_workers: int = 8,
     ):
         super().__init__()

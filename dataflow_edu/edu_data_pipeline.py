@@ -25,28 +25,28 @@ from dataflow_edu.config.schema import default_config
 from dataflow_edu.operators import (  # noqa: E402
     AmbiguityCleaningOperator,
     BalancingOperator,
-    MinerUParsingOperator,
+    MinerUOCROperator,
 )
 from dataflow_edu.pipelines import GenerationPipeline  # noqa: E402
 
 
-def run_mineru_parsing():
-    """阶段一 1.2：MinerU Parsing Operator"""
+def run_mineru_ocr():
+    """阶段一 1.2：MinerU OCR Operator"""
     config = load_config(project_root=_PROJECT_ROOT)
     path = get_config_path(_PROJECT_ROOT)
     if not os.path.isfile(path):
         print("⚠ 配置文件不存在，使用内置 1.2 参数。可通过 1.1 配置并保存。")
         config = default_config()
 
-    mp = config.operators.get("mineru_parsing")
+    mp = config.operators.get("mineru_ocr")
     if not mp:
-        mp = default_config().operators["mineru_parsing"]
+        mp = default_config().operators["mineru_ocr"]
 
     img_dir = mp.img_dir if os.path.isabs(mp.img_dir) else os.path.join(_PROJECT_ROOT, mp.img_dir)
     md_dir = mp.md_dir if os.path.isabs(mp.md_dir) else os.path.join(_PROJECT_ROOT, mp.md_dir)
     os.makedirs(md_dir, exist_ok=True)
 
-    op = MinerUParsingOperator(
+    op = MinerUOCROperator(
         batch_size=mp.batch_size,
         poll_interval=mp.poll_interval,
         poll_timeout=mp.poll_timeout,
@@ -130,42 +130,42 @@ def _stub(name: str):
 
 
 def show_menu():
-    """显示 Workflow 步骤菜单"""
+    """显示 Pipeline 步骤菜单"""
     print()
     print("=" * 60)
-    print("  DataFlow-EDU Workflow - 请选择要执行的步骤")
+    print("  DataFlow-EDU Pipeline - 请选择要执行的步骤")
     print("=" * 60)
     print()
-    print("【阶段一：Taxonomy & Ingestion】")
-    print("  1.1  Configuration")
-    print("  1.2  MinerU Parsing Operator")
+    print("【阶段一：Taxonomy & OCR 分类与OCR】")
+    print("  1.1  Configuration Manager 配置管理")
+    print("  1.2  MinerU OCR Operator 多模态OCR算子")
     print()
-    print("【阶段二：Generation & Balancing】")
-    print("  2.1  Generation Operator")
-    print("  2.2  Balancing Operator")
+    print("【阶段二：Generation & Balancing 生成与均衡】")
+    print("  2.1  Generation Operator 生成算子")
+    print("  2.2  Balancing Operator 均衡算子")
     print()
-    print("【阶段三：Cleaning & Refinement】")
-    print("  3.1  Ambiguity Cleaning")
-    print("  3.2  Ambiguity Refinement")
-    print("  3.3  Domain Cleaning")
-    print("  3.4  Domain Refinement")
-    print("  3.5  Deduplication")
-    print("  3.6  Synthesis")
-    print("  3.7  Translation")
-    print("  3.8  MCQ Verify")
+    print("【阶段三：Cleaning & Refinement 清洗与精修】")
+    print("  3.1  Ambiguity Cleaning Operator 二义性清洗算子")
+    print("  3.2  Ambiguity Refinement Operator 二义性精修算子")
+    print("  3.3  Domain Cleaning Operator 领域相关性清洗算子")
+    print("  3.4  Domain Refinement Operator 领域相关性精修算子")
+    print("  3.5  Deduplication Operator 去重算子")
+    print("  3.6  Synthesis Operator 解析生成算子")
+    print("  3.7  Translation Operator 翻译算子")
+    print("  3.8  MCQ Verify Operator 选择题验证算子")
     print()
-    print("【阶段四：Evaluation & Judge】")
-    print("  4.1  Evaluation Operator")
-    print("  4.2  Judge Operator")
+    print("【阶段四：Execute & Judge 执行与评估】")
+    print("  4.1  Execute Operator 执行算子")
+    print("  4.2  Judge Operator 评估算子")
     print()
-    print("  0    退出")
+    print("  0    退出 Exit")
     print("=" * 60)
 
 
 def main():
     handlers = {
         "1.1": run_config_manager,
-        "1.2": run_mineru_parsing,
+        "1.2": run_mineru_ocr,
         "2.1": run_generation,
         "2.2": run_balancing,
         "3.1": run_ambiguity_cleaning,
@@ -176,7 +176,7 @@ def main():
         "3.6": lambda: _stub("3.6 Synthesis"),
         "3.7": lambda: _stub("3.7 Translation"),
         "3.8": lambda: _stub("3.8 MCQ Verify"),
-        "4.1": lambda: _stub("4.1 Evaluation Operator"),
+        "4.1": lambda: _stub("4.1 Execute Operator"),
         "4.2": lambda: _stub("4.2 Judge Operator"),
     }
 

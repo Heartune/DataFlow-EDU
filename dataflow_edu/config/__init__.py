@@ -4,7 +4,7 @@
 from dataflow_edu.config.schema import (
     AbilityLevelItem,
     EduConfig,
-    MineruConfig,
+    MinerUOCRConfig,
     QuestionType,
     TaxonomyItem,
     default_config,
@@ -15,7 +15,7 @@ from dataflow_edu.config.validator import validate_config
 __all__ = [
     "AbilityLevelItem",
     "EduConfig",
-    "MineruConfig",
+    "MinerUOCRConfig",
     "QuestionType",
     "TaxonomyItem",
     "default_config",

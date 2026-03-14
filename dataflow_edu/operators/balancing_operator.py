@@ -62,7 +62,7 @@ class BalancingOperator(OperatorABC):
 
     def __init__(
         self,
-        output_dir: str = "dataflow_edu/data/generated_and_balanced",
+        output_dir: str = "dataflow_edu/data/generation_and_balancing",
         md_dir: str = "dataflow_edu/data/resources/md",
         max_workers: int = 8,
     ):
@@ -107,7 +107,7 @@ class BalancingOperator(OperatorABC):
         bal_cfg = config.operators.get("balancing")
         if isinstance(bal_cfg, dict):
             bal_cfg = BalancingConfig(
-                output_dir=bal_cfg.get("output_dir", "dataflow_edu/data/generated_and_balanced"),
+                output_dir=bal_cfg.get("output_dir", "dataflow_edu/data/generation_and_balancing"),
                 sample_size=int(bal_cfg.get("sample_size", 32)),
                 max_iterations=int(bal_cfg.get("max_iterations", 10)),
                 max_per_sublevel_iterations=int(bal_cfg.get("max_per_sublevel_iterations", 2)),

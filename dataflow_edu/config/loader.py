@@ -12,7 +12,7 @@ from dataflow_edu.config.schema import (
     BalancingConfig,
     EduConfig,
     GenerationConfig,
-    MineruConfig,
+    MinerUOCRConfig,
     QuestionType,
     TaxonomyItem,
     default_config,
@@ -44,16 +44,16 @@ def _config_to_dict(config: EduConfig) -> dict:
             for a in config.ability_levels
         ],
         "operators": {
-            "mineru_parsing": {
-                "img_dir": config.operators.get("mineru_parsing", MineruConfig()).img_dir,
-                "md_dir": config.operators.get("mineru_parsing", MineruConfig()).md_dir,
-                "batch_size": config.operators.get("mineru_parsing", MineruConfig()).batch_size,
-                "poll_interval": config.operators.get("mineru_parsing", MineruConfig()).poll_interval,
-                "poll_timeout": config.operators.get("mineru_parsing", MineruConfig()).poll_timeout,
-                "skip_existing": config.operators.get("mineru_parsing", MineruConfig()).skip_existing,
-                "language": config.operators.get("mineru_parsing", MineruConfig()).language,
-                "enable_formula": config.operators.get("mineru_parsing", MineruConfig()).enable_formula,
-                "enable_table": config.operators.get("mineru_parsing", MineruConfig()).enable_table,
+            "mineru_ocr": {
+                "img_dir": config.operators.get("mineru_ocr", MinerUOCRConfig()).img_dir,
+                "md_dir": config.operators.get("mineru_ocr", MinerUOCRConfig()).md_dir,
+                "batch_size": config.operators.get("mineru_ocr", MinerUOCRConfig()).batch_size,
+                "poll_interval": config.operators.get("mineru_ocr", MinerUOCRConfig()).poll_interval,
+                "poll_timeout": config.operators.get("mineru_ocr", MinerUOCRConfig()).poll_timeout,
+                "skip_existing": config.operators.get("mineru_ocr", MinerUOCRConfig()).skip_existing,
+                "language": config.operators.get("mineru_ocr", MinerUOCRConfig()).language,
+                "enable_formula": config.operators.get("mineru_ocr", MinerUOCRConfig()).enable_formula,
+                "enable_table": config.operators.get("mineru_ocr", MinerUOCRConfig()).enable_table,
             },
             "generation": {
                 "md_dir": config.operators.get("generation", GenerationConfig()).md_dir,
@@ -117,9 +117,10 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
         for item in d.get("ability_levels", [])
     ]
 
-    mp_defaults = MineruConfig()
-    mp_op = d.get("operators", {}).get("mineru_parsing", {})
-    mp = MineruConfig(
+    mp_defaults = MinerUOCRConfig()
+    ops = d.get("operators", {}) or {}
+    mp_op = ops.get("mineru_ocr") or ops.get("mineru_parsing", {})
+    mp = MinerUOCRConfig(
         img_dir=mp_op.get("img_dir", mp_defaults.img_dir),
         md_dir=mp_op.get("md_dir", mp_defaults.md_dir),
         batch_size=int(mp_op.get("batch_size", mp_defaults.batch_size)),
@@ -175,7 +176,7 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
         taxonomy=taxonomy,
         question_types=question_types,
         ability_levels=ability_levels,
-        operators={"mineru_parsing": mp, "generation": gen, "balancing": bal, "ambiguity_cleaning": amb},
+        operators={"mineru_ocr": mp, "generation": gen, "balancing": bal, "ambiguity_cleaning": amb},
     )
 
 

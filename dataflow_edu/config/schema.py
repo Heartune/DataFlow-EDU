@@ -32,8 +32,8 @@ class AbilityLevelItem:
 
 
 @dataclass
-class MineruConfig:
-    """1.2 MinerU Parsing Operator 参数。"""
+class MinerUOCRConfig:
+    """1.2 MinerU OCR Operator 参数。"""
 
     img_dir: str = "dataflow_edu/data/resources/img"
     md_dir: str = "dataflow_edu/data/resources/md"
@@ -51,7 +51,7 @@ class GenerationConfig:
     """2.1 Generation Operator 参数。"""
 
     md_dir: str = "dataflow_edu/data/resources/md"
-    output_dir: str = "dataflow_edu/data/generated_and_balanced"
+    output_dir: str = "dataflow_edu/data/generation_and_balancing"
     questions_per_pair: int = 5
     max_workers: int = 8
     api_delay: float = 0.3
@@ -64,7 +64,7 @@ class GenerationConfig:
 class BalancingConfig:
     """2.2 Balancing Operator 参数。"""
 
-    output_dir: str = "dataflow_edu/data/generated_and_balanced"
+    output_dir: str = "dataflow_edu/data/generation_and_balancing"
     sample_size: int = 32
     max_iterations: int = 10
     max_per_sublevel_iterations: int = 2
@@ -77,7 +77,7 @@ class AmbiguityCleaningConfig:
     """3.1 Ambiguity Cleaning Operator 参数。"""
 
     output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned"
-    input_dir: str = "dataflow_edu/data/generated_and_balanced/2_2_balanced"
+    input_dir: str = "dataflow_edu/data/generation_and_balancing/2_2_balanced"
     max_workers: int = 8
     max_retries: int = 3
     threshold_remove: int = 2  # 1-2 分剔除
@@ -90,7 +90,7 @@ class EduConfig:
     taxonomy: List[TaxonomyItem] = field(default_factory=list)
     question_types: List[QuestionType] = field(default_factory=list)
     ability_levels: List[AbilityLevelItem] = field(default_factory=list)
-    operators: dict = field(default_factory=dict)  # {"mineru_parsing": MineruConfig}
+    operators: dict = field(default_factory=dict)  # {"mineru_ocr": MinerUOCRConfig}
 
 
 def default_config() -> EduConfig:
@@ -133,7 +133,7 @@ def default_config() -> EduConfig:
             ),
         ],
         operators={
-            "mineru_parsing": MineruConfig(),
+            "mineru_ocr": MinerUOCRConfig(),
             "generation": GenerationConfig(),
             "balancing": BalancingConfig(),
             "ambiguity_cleaning": AmbiguityCleaningConfig(),

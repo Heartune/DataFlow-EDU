@@ -133,31 +133,30 @@ def _allocate_questions_by_weight(
 ) -> List[Tuple[QuestionType, int]]:
     """
     按 weight 分配各题型数量，确保总和为 num_questions。
+    当 num_questions 较小时，round 可能使低权重题型（如判断题 8%）得到 0；
+    若某题型 weight >= 0.05 却得到 0，会从最「过剩」的题型挪 1 道以保证覆盖。
     Returns: [(QuestionType, count), ...]，count>0 的题型。
     """
     if not question_types or num_questions <= 0:
         return []
     total_weight = sum(q.weight for q in question_types)
     if total_weight <= 0:
-        # 等分
         n = len(question_types)
         base = num_questions // n
         remainder = num_questions % n
         return [(q, base + (1 if i < remainder else 0)) for i, q in enumerate(question_types)]
-    allocation = []
+    allocation: List[Tuple[QuestionType, int]] = []
     for q in question_types:
         count = max(0, round(num_questions * q.weight / total_weight))
         if count > 0:
             allocation.append((q, count))
     current_sum = sum(c for _, c in allocation)
     while current_sum < num_questions:
-        # 缺多少补到权重最大的题型
         best = max(allocation, key=lambda x: (x[0].weight, -allocation.index(x)))
         idx = allocation.index(best)
         allocation[idx] = (best[0], best[1] + 1)
         current_sum += 1
     while current_sum > num_questions:
-        # 多减权重最小的
         worst = min(allocation, key=lambda x: (x[0].weight, allocation.index(x)))
         idx = allocation.index(worst)
         if allocation[idx][1] <= 1:
@@ -165,6 +164,25 @@ def _allocate_questions_by_weight(
         else:
             allocation[idx] = (worst[0], worst[1] - 1)
         current_sum -= 1
+
+    # 保证 weight >= 0.05 的题型至少有 1 道（如判断题 8% 在 questions_per_pair=5 时易被 round 为 0）
+    MIN_WEIGHT_FOR_ONE = 0.05
+    allocated_names = {a[0].name for a in allocation}
+    zero_types = [q for q in question_types if q.weight >= MIN_WEIGHT_FOR_ONE and q.name not in allocated_names]
+    for q in sorted(zero_types, key=lambda x: -x.weight):
+        if not allocation:
+            break
+        excess = [(i, a) for i, a in enumerate(allocation) if a[1] > 1]
+        if excess:
+            idx = min(excess, key=lambda x: x[1][0].weight)[0]
+            allocation[idx] = (allocation[idx][0], allocation[idx][1] - 1)
+            if allocation[idx][1] == 0:
+                allocation.pop(idx)
+            allocation.append((q, 1))
+        else:
+            # 每题型均 1 道，用 zero_type 替换权重最小的题型
+            idx = min(range(len(allocation)), key=lambda i: allocation[i][0].weight)
+            allocation[idx] = (q, 1)
     return [(q, c) for q, c in allocation if c > 0]
 
 
@@ -491,21 +509,21 @@ def process_page_pair_stage2(
 
 
 def get_stage1_dir(output_dir: str) -> str:
-    """dataflow_edu/data/generated_and_balanced 下 2_1_generated_stage_1 目录。"""
+    """dataflow_edu/data/generation_and_balancing 下 2_1_generated_stage_1 目录。"""
     d = os.path.join(output_dir, "2_1_generated_stage_1")
     os.makedirs(d, exist_ok=True)
     return d
 
 
 def get_stage2_dir(output_dir: str) -> str:
-    """dataflow_edu/data/generated_and_balanced 下 2_1_generated_stage_2 目录。"""
+    """dataflow_edu/data/generation_and_balancing 下 2_1_generated_stage_2 目录。"""
     d = os.path.join(output_dir, "2_1_generated_stage_2")
     os.makedirs(d, exist_ok=True)
     return d
 
 
 def get_balanced_dir(output_dir: str) -> str:
-    """dataflow_edu/data/generated_and_balanced 下 2_2_balanced 目录。2.2 Balancing 输出。"""
+    """dataflow_edu/data/generation_and_balancing 下 2_2_balanced 目录。2.2 Balancing 输出。"""
     d = os.path.join(output_dir, "2_2_balanced")
     os.makedirs(d, exist_ok=True)
     return d
@@ -655,21 +673,75 @@ def run_stage2(
         end = pair_end if pair_end is not None else len(page_pairs)
         indices_to_process = [i for i in indices_to_process if start <= i < end]
 
-    all_questions = []
-    for idx in tqdm(indices_to_process, desc="阶段2-题目生成", unit="组"):
-        if idx >= len(page_pairs):
-            continue
-        pair = page_pairs[idx]
-        info = pairs_info.get(idx, {})
-        subcats = info.get("subcategories", [])
-        if info.get("failed", False) and not subcats:
-            subcats = ["通用"]
-        qs, _ = process_page_pair_stage2(
-            pair, subcats, question_types, ability_levels, questions_per_pair
-        )
-        all_questions.extend(qs)
-
     stage2_dir = get_stage2_dir(output_dir)
+    partial_path = os.path.join(stage2_dir, f"{folder_name}_stage2_partial.json")
+
+    results_by_idx = {}
+    if resume and os.path.isfile(partial_path):
+        try:
+            with open(partial_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            results_by_idx = {int(k): v for k, v in data.get("results_by_idx", {}).items()}
+            if results_by_idx:
+                print(f"  从进度恢复：已完成 {len(results_by_idx)} 组")
+        except Exception:
+            pass
+
+    pending = [i for i in indices_to_process if i not in results_by_idx]
+    if not pending:
+        print("  阶段2 已全部完成")
+    else:
+
+        def task(idx: int):
+            if idx >= len(page_pairs):
+                return idx, []
+            pair = page_pairs[idx]
+            info = pairs_info.get(idx, {})
+            subcats = info.get("subcategories", [])
+            if info.get("failed", False) and not subcats:
+                subcats = ["通用"]
+            qs, _ = process_page_pair_stage2(
+                pair, subcats, question_types, ability_levels, questions_per_pair
+            )
+            return idx, qs
+
+        def save_partial():
+            with open(partial_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"results_by_idx": {str(k): v for k, v in results_by_idx.items()}},
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+        with tqdm(
+            total=len(indices_to_process),
+            desc="阶段2-题目生成",
+            unit="组",
+            initial=len(results_by_idx),
+        ) as pbar:
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futures = {ex.submit(task, idx): idx for idx in pending}
+                for fut in as_completed(futures):
+                    try:
+                        idx, qs = fut.result()
+                        results_by_idx[idx] = qs
+                    except Exception:
+                        results_by_idx[futures[fut]] = []
+                    pbar.update(1)
+                    if len(results_by_idx) % SAVE_INTERVAL == 0:
+                        save_partial()
+
+    all_questions = []
+    for idx in sorted(results_by_idx.keys()):
+        all_questions.extend(results_by_idx[idx])
+
+    if os.path.isfile(partial_path):
+        try:
+            os.remove(partial_path)
+        except OSError:
+            pass
+
     excel_path = os.path.join(stage2_dir, f"{folder_name}_generated_questions.xlsx")
     json_path = os.path.join(stage2_dir, f"{folder_name}_generated_questions.json")
 

@@ -1,7 +1,7 @@
 """
-MinerU Parsing Pipeline - 最小示例
+MinerU OCR Pipeline - 最小示例
 
-展示如何串联 MinerUParsingOperator，对教材图片进行批量 OCR 转 Markdown。
+展示如何串联 MinerUOCROperator，对教材图片进行批量 OCR 转 Markdown。
 本 Pipeline 为半自动：运行时会交互式选择要处理的教材。
 
 运行前需要：
@@ -20,16 +20,16 @@ if _PROJECT_ROOT not in sys.path:
 
 # 导入 dataflow_edu 以触发算子注册
 import dataflow_edu  # noqa: E402, F401
-from dataflow_edu.operators import MinerUParsingOperator  # noqa: E402
+from dataflow_edu.operators import MinerUOCROperator  # noqa: E402
 
 
-class MinerUParsingPipeline:
-    """仅包含 MinerU Parsing 算子的最小 Pipeline。"""
+class MinerUOCRPipeline:
+    """仅包含 MinerU OCR 算子的最小 Pipeline。"""
 
     def __init__(self, img_dir: str, md_dir: str, **operator_kwargs):
         self.img_dir = img_dir
         self.md_dir = md_dir
-        self.operator = MinerUParsingOperator(**operator_kwargs)
+        self.operator = MinerUOCROperator(**operator_kwargs)
 
     def forward(self):
         """执行 MinerU 解析（含交互式选择教材）。"""
@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     os.makedirs(md_dir, exist_ok=True)
 
-    pl = MinerUParsingPipeline(
+    pl = MinerUOCRPipeline(
         img_dir=img_dir,
         md_dir=md_dir,
         batch_size=50,

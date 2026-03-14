@@ -1,5 +1,7 @@
 # DataFlow-EDU
 
+Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
+
 ## 核心定位说明
 
 > 基于我在包含7.9万条语料的机器人理论语料库ROBOTheory-79k、规模1.6T网络安全专业语料库CyberSecCorpus、电子信息学科数据集EE-Bench、中国法律大模型评测基准CNLaw-Bench方面的丰富构建经验，我的核心目标是打造 **DataFlow-EDU**——一条高度自动化、算子化且具备通用性的「学科数据集与评测基准（Benchmark）」生产管线。该管线贯穿从「原始教材输入」到「高质量结构化题库输出」的全生命周期。它不仅包含基于 MinerU 的多模态文档解析、切片式题库生成与题型动态均衡模块，更深度融入了目标团队 DataFlow 的算子化清洗哲学。通过灵活串联条件过滤、领域对齐 与基于 Question Verify 的 LLM-as-a-Judge 多维能力审阅等定制化算子，最终实现自动化、批量化地生产低幻觉、高质量、均衡分布的学科评测集与 SFT 训练语料，成为赋能各类学科大模型能力跃升的基础设施。这套系统支持包括教材在内的任意PDF教学资源输入，这里我将以高中生物教材（PDF格式）作为资源，进行项目demo演示。
@@ -19,16 +21,16 @@
 涉及 LLM 交互的部分，可复用 `dataflow_edu.serving.llm_client`。该模块位于 `dataflow_edu/serving/` 目录下，作为通用 LLM 客户端，被需要它的算子共用。配置保存于项目根目录的 `.llm_config.json`。
 
 
-### 阶段一：Taxonomy & Ingestion
+### 阶段一：Taxonomy & OCR
 
 这一阶段主要解决「考什么」和「从哪取数据」的问题。
 
-- **1.1 Config Manager：** 支持灵活配置“考察知识方向（大类-小类双层架构）” + “考察能力层级（建议也是双层架构）” + “考察形式（题型）”。同时支持配置Pipeline 和各 Operator 的参数。注意这部分是用户手动配置。
-- **1.2 MinerU Parsing Operator：** 批量输入高质量教材PDF图片（图片直接用wps的pdf转图片功能），调用 MinerU 引擎的批量处理 API，利用通用数据算子对每页提取文本、表格和复杂图文对，并清洗为标准化的 Markdown 格式。
+- **1.1 Configuration Manager：** 支持灵活配置“考察知识方向（大类-小类双层架构）” + “考察能力层级（建议也是双层架构）” + “考察形式（题型）”。同时支持配置Pipeline 和各 Operator 的参数。注意这部分是用户手动配置。
+- **1.2 MinerU OCR Operator：** 批量输入高质量教材PDF图片（图片直接用wps的pdf转图片功能），调用 MinerU 引擎的批量处理 API，利用通用数据算子对每页提取文本、表格和复杂图文对，并清洗为标准化的 Markdown 格式。
 
 ### 阶段二：Generation & Balancing 
 
-这一阶段负责将知识原料转化为题目，并保证题型分布的合理性。结果放在dataflow_edu\data\generated_and_balanced.
+这一阶段负责将知识原料转化为题目，并保证题型分布的合理性。结果放在dataflow_edu\data\generation_and_balancing.
 
 基于config Manager配置的“考察知识方向（大类-小类）” + “考察能力层级（建议双层架构）” + “考察形式（题型）” 的系统设计与评测维度 
 
@@ -52,7 +54,7 @@
 
 ### 阶段四：Execute & Judge
 
-将生成的 Benchmark 真正运行起来，检验目标模型的能力。结果放在dataflow_edu\data\results.
+将生成的 Benchmark 真正运行起来，检验目标模型的能力。结果放在dataflow_edu\data\execute_and_judge.
 
 - **4.1 Execute Operator：** 将待测的大模型接入系统进行作答，记录其答案。
 - **4.2 Judge Operator：** 对应 DataFlow 中的「基于正确答案 Question Verify 算子」，调用大模型作为裁判。

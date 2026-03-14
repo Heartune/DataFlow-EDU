@@ -83,7 +83,7 @@ ability_levels:
   - 参与环境保护
   - 健康生活倡导
 operators:
-  mineru_parsing:
+  mineru_ocr:
     img_dir: dataflow_edu/data/resources/img
     md_dir: dataflow_edu/data/resources/md
     batch_size: 50
@@ -95,7 +95,7 @@ operators:
     enable_table: true
   generation:
     md_dir: dataflow_edu/data/resources/md
-    output_dir: dataflow_edu/data/generated_and_balanced
+    output_dir: dataflow_edu/data/generation_and_balancing
     questions_per_pair: 5
     max_workers: 8
     api_delay: 0.3
@@ -103,7 +103,7 @@ operators:
     max_retries: 3
     save_interval: 5
   balancing:
-    output_dir: dataflow_edu/data/generated_and_balanced
+    output_dir: dataflow_edu/data/generation_and_balancing
     sample_size: 32
     max_iterations: 10
     max_per_sublevel_iterations: 2

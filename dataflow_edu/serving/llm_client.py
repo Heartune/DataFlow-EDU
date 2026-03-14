@@ -408,6 +408,13 @@ def interactive_select_llm_model(
     if provider == "zaiwen":
         return _interactive_select_zaiwen_model(default_model, config_key)
 
+    # 有默认模型时，先询问是否使用，用户不使用时再获取列表
+    if default_model:
+        hint = input(f"\n是否使用已选模型 [{default_model}]? (y/n, 回车=y): ").strip().lower()
+        if hint in ("", "y", "yes"):
+            print(f"✓ 使用已选模型: {default_model}")
+            return default_model
+
     print("\n正在获取可用模型列表...")
     models = _fetch_model_list(api_key, base_url)
     if not models:

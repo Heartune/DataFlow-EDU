@@ -90,7 +90,7 @@ class GenerationOperator(OperatorABC):
     def __init__(
         self,
         md_dir: str = "dataflow_edu/data/resources/md",
-        output_dir: str = "dataflow_edu/data/generated_and_balanced",
+        output_dir: str = "dataflow_edu/data/generation_and_balancing",
         questions_per_pair: int = 5,
         max_workers: int = 8,
         api_delay: float = 0.3,
@@ -167,7 +167,7 @@ class GenerationOperator(OperatorABC):
         textbooks = _scan_textbooks(md_dir)
         if not textbooks:
             self.logger.warning("没有找到任何教材 Markdown 子目录")
-            print("未找到教材，请先运行 1.2 MinerU Parsing。")
+            print("未找到教材，请先运行 1.2 MinerU OCR。")
             return False, None, None
 
         statuses = _display_textbook_table(textbooks, output_dir)
