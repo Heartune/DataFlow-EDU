@@ -121,6 +121,10 @@ def _config_to_dict(config: EduConfig) -> dict:
                 "input_dir": config.operators.get("execute", ExecuteConfig()).input_dir,
                 "output_dir": config.operators.get("execute", ExecuteConfig()).output_dir,
             },
+            "judge": {
+                "input_dir": config.operators.get("judge", JudgeConfig()).input_dir,
+                "output_dir": config.operators.get("judge", JudgeConfig()).output_dir,
+            },
         },
     }
 
@@ -282,6 +286,16 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
         output_dir=str(exec_op.get("output_dir", exec_defaults.output_dir)),
     )
 
+    judge_defaults = JudgeConfig()
+    judge_op = d.get("operators", {}) or {}
+    judge_op = judge_op.get("judge")
+    if not isinstance(judge_op, dict):
+        judge_op = {}
+    judge_cfg = JudgeConfig(
+        input_dir=str(judge_op.get("input_dir", judge_defaults.input_dir)),
+        output_dir=str(judge_op.get("output_dir", judge_defaults.output_dir)),
+    )
+
     return EduConfig(
         taxonomy=taxonomy,
         question_types=question_types,
@@ -296,6 +310,7 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
             "domain_refinement": domref,
             "deduplication": dedup,
             "execute": exec_cfg,
+            "judge": judge_cfg,
         },
     )
 

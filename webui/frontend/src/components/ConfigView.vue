@@ -37,6 +37,7 @@ const operatorLabels: Record<string, string> = {
   domain_refinement: '3.4 Domain Refinement',
   deduplication: '3.5 Deduplication',
   execute: '4.1 Execute',
+  judge: '4.2 Judge',
 };
 
 const config = computed(() => configStore.config);

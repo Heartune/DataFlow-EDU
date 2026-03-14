@@ -145,3 +145,6 @@ operators:
   execute:
     input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
     output_dir: dataflow_edu/data/execute_and_judge/4_1_executed
+  judge:
+    input_dir: dataflow_edu/data/execute_and_judge/4_1_executed
+    output_dir: dataflow_edu/data/execute_and_judge/4_2_judged
