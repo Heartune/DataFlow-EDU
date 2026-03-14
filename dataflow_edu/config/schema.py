@@ -122,6 +122,17 @@ class DomainRefinementConfig:
 
 
 @dataclass
+class DeduplicationConfig:
+    """3.5 Deduplication Operator 参数。"""
+
+    input_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined"
+    output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated"
+    threshold: float = 0.9  # MinHash 相似度阈值
+    num_perm: int = 128  # MinHash 排列数
+    n_gram: int = 5  # 字符级 n-gram 大小
+
+
+@dataclass
 class EduConfig:
     """DataFlow-EDU 完整配置。"""
 
@@ -178,5 +189,6 @@ def default_config() -> EduConfig:
             "ambiguity_refinement": AmbiguityRefinementConfig(),
             "domain_cleaning": DomainCleaningConfig(),
             "domain_refinement": DomainRefinementConfig(),
+            "deduplication": DeduplicationConfig(),
         },
     )

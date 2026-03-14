@@ -11,6 +11,7 @@ from dataflow_edu.config.schema import (
     AmbiguityCleaningConfig,
     AmbiguityRefinementConfig,
     BalancingConfig,
+    DeduplicationConfig,
     DomainCleaningConfig,
     EduConfig,
     GenerationConfig,
@@ -97,6 +98,13 @@ def _config_to_dict(config: EduConfig) -> dict:
                 "max_retries": config.operators.get("domain_cleaning", DomainCleaningConfig()).max_retries,
                 "threshold_remove": config.operators.get("domain_cleaning", DomainCleaningConfig()).threshold_remove,
                 "domain_name": config.operators.get("domain_cleaning", DomainCleaningConfig()).domain_name,
+            },
+            "deduplication": {
+                "input_dir": config.operators.get("deduplication", DeduplicationConfig()).input_dir,
+                "output_dir": config.operators.get("deduplication", DeduplicationConfig()).output_dir,
+                "threshold": config.operators.get("deduplication", DeduplicationConfig()).threshold,
+                "num_perm": config.operators.get("deduplication", DeduplicationConfig()).num_perm,
+                "n_gram": config.operators.get("deduplication", DeduplicationConfig()).n_gram,
             },
         },
     }
@@ -220,6 +228,19 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
         domain_name=str(dom_op.get("domain_name", dom_defaults.domain_name)),
     )
 
+    dedup_defaults = DeduplicationConfig()
+    dedup_op = d.get("operators", {}) or {}
+    dedup_op = dedup_op.get("deduplication")
+    if not isinstance(dedup_op, dict):
+        dedup_op = {}
+    dedup = DeduplicationConfig(
+        input_dir=str(dedup_op.get("input_dir", dedup_defaults.input_dir)),
+        output_dir=str(dedup_op.get("output_dir", dedup_defaults.output_dir)),
+        threshold=float(dedup_op.get("threshold", dedup_defaults.threshold)),
+        num_perm=int(dedup_op.get("num_perm", dedup_defaults.num_perm)),
+        n_gram=int(dedup_op.get("n_gram", dedup_defaults.n_gram)),
+    )
+
     return EduConfig(
         taxonomy=taxonomy,
         question_types=question_types,
@@ -231,6 +252,7 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
             "ambiguity_cleaning": amb,
             "ambiguity_refinement": ref,
             "domain_cleaning": dom,
+            "deduplication": dedup,
         },
     )
 

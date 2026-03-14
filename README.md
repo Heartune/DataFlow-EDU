@@ -1,4 +1,6 @@
-# DataFlow-EDU
+# DataFlow-EDU：端到端交互式学科语料库与Benchmark生成
+
+> 从一个PDF到无穷大
 
 Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
@@ -10,9 +12,9 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
 ## DataFlow-EDU 方案设计图景
 
-为了向导师完美呈现，我们可以将这套 Workflow 映射到 DataFlow 的算子化（Operator）和管线化（Pipeline）架构中。
+我将这套 Workflow 映射到 DataFlow 的算子化 Operator 和管线化 Pipeline 架构中。
 
-注意，所有算子都要是命令行交互式的，如果当前要实现的算子的参考代码不是交互式的，那么要参考前面已经实现的算子的相关代码，进行设计。我们的pipeline不是那种全自动的，是半自动的，人工的监控、管理和介入是必要的。
+注意，所有算子都要是命令行交互式的，如果当前要实现的算子的参考代码不是交互式的，那么要参考前面已经实现的算子的相关代码，进行设计。我的pipeline不是那种全自动的，是半自动的，人工的监控、管理和介入是必要的。
 
 整体有一个edu_data_pipeline.py，里面是对各个operator的调用，通过命令行交互式，用户可以选择执行哪个算子，即执行Workflow的哪个步骤。
 
@@ -50,8 +52,6 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 - **3.7 Translation Operator：** 执行多语言翻译，默认支持英法两种语言。支持检查残留源语言文本重新翻译。
 - **3.8 MCQ Verify Operator：** 专为选择题设计的清洗算子，检查选择题是否包含 ABCD 四个选项，没有的补上。optimize_answers有validate_choice_questions（检查ABCD）、complete_choice_options（缺失时补全）。
 
->   阶段一、二、三的执行过程中，基于utils_from_CNLaw-Bench\stage_viewer.html的样式（同时借鉴DataFlow项目的WebUI中的功能，有做得好的要加上），设计一个统一的面板，可以看到各个节点的情况，尤其是Configuration Manager. 这个后面再做
-
 > 建议注意，有能提升难度的地方可以自己改一下，比如生成一些东西的时候.txt
 
 ### 阶段四：Execute & Judge
@@ -64,6 +64,14 @@ Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 ### 其他工具
 
 对于CNLawbench和ROBOTheory两个项目产出的json转excel、excel转jsonl这些工具脚本，整理放在utils文件夹下。
+
+### WebUI
+
+阶段一、二、三的执行过程中，基于utils_from_CNLaw-Bench\stage_viewer.html的样式（同时借鉴DataFlow项目的WebUI中的功能，有做得好的要加上），设计一个统一的面板，可以看到各个节点的情况。
+
+Pipeline 看板（Vue 3 + Node.js）位于 `webui/`。启动方式：`cd webui && npm install && npm run dev`.
+
+原单文件 `edu_pipeline_webui.html` 仍可独立使用（需在项目根目录启动 HTTP 服务）。
 
 ---
 

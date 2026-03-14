@@ -1,36 +1,23 @@
 {
-  "questions": [
-    {
-      "question": "根据教材后记及致谢名单提供的信息，请归纳概括出一本高质量现代教材的编写与出版需要具备哪些核心要素？",
-      "answer": "1. 政策与标准的指导性：必须依据国家课程标准编写并经国家教材委员会审查，确保教育方向的权威性。\n2. 团队协作的专业性：集合了教育专家、学科专家、教研人员、一线教师及装帧设计专家等多领域的集体智慧。\n3. 经验的传承与创新：吸取历版教材的编写经验，反映长期的课程改革成果。\n4. 资源的合法性与丰富性：包括插图绘制、专业摄影作品、科学家提供的实验资料等，并需严格遵守版权规范。\n5. 持续改进的开放性：通过收集师生反馈并不断修订，使教材在动态调整中趋于完善。",
-      "type": "简答题",
-      "subcategory": "通用",
-      "ability_level": "归纳与概括",
-      "difficulty": "中",
-      "source_page": "55-56",
-      "ambiguity_score": 5,
-      "ambiguity_reason": "该题目表述清晰，明确限定了信息来源为“教材后记及致谢名单”，并提出了具体的归纳概括要求。参考答案从政策、团队、经验、资源、改进五个维度进行了逻辑严密的总结，与题干指向高度匹配，不存在歧义，语境完备且逻辑一致。",
-      "domain_relevance_score": 1,
-      "domain_relevance_reason": "该题目虽然以教材后记为背景，但其核心考察点在于归纳概括教材编写与出版的通用要素，属于教育学、出版学或通用逻辑分析范畴。题目内容不涉及任何生物学专业知识、生命科学概念或实验原理，与生物学科的核心素养和知识体系几乎无关。"
-    }
-  ],
+  "questions": [],
   "metadata": {
     "source": "d:\\PKU MY DREAM\\DataFlow-EDU\\dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined\\生物学必修1_ambiguity_refined.json",
     "stage1": "d:\\PKU MY DREAM\\DataFlow-EDU\\dataflow_edu/data/generation_and_balancing\\2_1_generated_stage_1\\生物学必修1_stage1_taxonomy.json",
     "stage2": "d:\\PKU MY DREAM\\DataFlow-EDU\\dataflow_edu/data/generation_and_balancing\\2_1_generated_stage_2\\生物学必修1_generated_questions.json",
-    "total": 472,
+    "total": 355,
     "ambiguity_cleaning": {
-      "kept": 420,
-      "removed": 52,
+      "kept": 328,
+      "removed": 27,
       "threshold_remove": 1
     },
     "ambiguity_refinement": {
-      "refined_count": 40,
-      "unchanged_high": 380,
-      "failed_kept": 0
+      "refined_count": 27,
+      "unchanged_high": 299,
+      "failed_kept": 0,
+      "discarded_rescore": 2
     },
     "domain_cleaning": {
-      "removed_count": 1,
+      "removed_count": 0,
       "threshold_remove": 1,
       "domain_name": "生物学"
     }

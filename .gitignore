@@ -15,6 +15,9 @@ dataflow_edu/data/resources/**/img/
 
 ideas.md
 
+# Node 依赖
+node_modules/
+
 # 含敏感信息的工具目录
 utils_from_CNLaw-Bench/
 utils_from_ROBOTheory/

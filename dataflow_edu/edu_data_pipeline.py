@@ -26,6 +26,7 @@ from dataflow_edu.operators import (  # noqa: E402
     AmbiguityCleaningOperator,
     AmbiguityRefinementOperator,
     BalancingOperator,
+    DeduplicationOperator,
     DomainCleaningOperator,
     DomainRefinementOperator,
     MinerUOCROperator,
@@ -191,6 +192,35 @@ def run_domain_refinement():
     op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
 
 
+def run_deduplication():
+    """阶段三 3.5：Deduplication Operator - 基于 MinHash + LSH 对题目题干去重"""
+    config = load_config(project_root=_PROJECT_ROOT)
+    path = get_config_path(_PROJECT_ROOT)
+    if not os.path.isfile(path):
+        print("⚠ 配置文件不存在，使用内置 3.5 参数。")
+        config = default_config()
+
+    dedup = config.operators.get("deduplication") or default_config().operators.get(
+        "deduplication"
+    )
+    if dedup is None:
+        from dataflow_edu.config.schema import DeduplicationConfig
+
+        dedup = DeduplicationConfig()
+    output_dir = dedup.output_dir if os.path.isabs(dedup.output_dir) else os.path.join(_PROJECT_ROOT, dedup.output_dir)
+    input_dir = dedup.input_dir if os.path.isabs(dedup.input_dir) else os.path.join(_PROJECT_ROOT, dedup.input_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    op = DeduplicationOperator(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        threshold=getattr(dedup, "threshold", 0.9),
+        num_perm=getattr(dedup, "num_perm", 128),
+        n_gram=getattr(dedup, "n_gram", 5),
+    )
+    op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
+
+
 def run_balancing():
     """阶段二 2.2：Balancing Operator - 能力子层级与题型分布均衡补题"""
     config = load_config(project_root=_PROJECT_ROOT)
@@ -256,7 +286,7 @@ def main():
         "3.2": run_ambiguity_refinement,
         "3.3": run_domain_cleaning,
         "3.4": run_domain_refinement,
-        "3.5": lambda: _stub("3.5 Deduplication"),
+        "3.5": run_deduplication,
         "3.6": lambda: _stub("3.6 Synthesis"),
         "3.7": lambda: _stub("3.7 Translation"),
         "3.8": lambda: _stub("3.8 MCQ Verify"),
