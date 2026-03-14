@@ -32,7 +32,7 @@ from dataflow_edu.serving import llm_client
 FLUSH_INTERVAL = 10
 
 
-def _scan_judge_candidates(input_dir: str) -> List[Tuple[str, str]]]:
+def _scan_judge_candidates(input_dir: str) -> List[Tuple[str, str]]:
     """扫描 input_dir 下 4_1 产出的 JSON（排除 *_judged_*），返回 [(display_name, fullpath)]。"""
     if not os.path.isdir(input_dir):
         return []
@@ -63,15 +63,13 @@ def _safe_model_id(model_name: str) -> str:
     return re.sub(r'[\\/:*?"<>|]', "_", model_name)
 
 
-def _find_latest_resume_file(output_dir: str, stem: str, model_id_safe: str) -> str | None:
-    """查找已存在的 judged 文件用于断点续传。"""
-    pattern = os.path.join(output_dir, f"{stem}_*_judged_*.json")
+def _find_latest_resume_file(output_dir: str, base_stem: str) -> str | None:
+    """查找已存在的 judged 文件用于断点续传。base_stem 为输入文件名（不含 .json）。"""
+    pattern = os.path.join(output_dir, f"{base_stem}_judged_*.json")
     matches = glob.glob(pattern)
-    # 进一步按 model_id 过滤（stem 可能含 model_id）
-    filtered = [m for m in matches if f"_{model_id_safe}_judged_" in m]
-    if not filtered:
+    if not matches:
         return None
-    return max(filtered, key=os.path.getmtime)
+    return max(matches, key=os.path.getmtime)
 
 
 def _build_llm_prompt(question: str, reference_answer: str, model_answer: str) -> str:
@@ -283,12 +281,11 @@ class JudgeOperator(OperatorABC):
             print("题目列表为空。")
             return False, None
 
-        # 解析 stem：用于输出命名。4_1 文件名为 {stem}_{model_id}_{timestamp}.json
+        # 输出文件命名：input 为 xxx_modelId_timestamp.json -> 输出 xxx_modelId_judged_newts.json
         base = os.path.basename(input_path)
         if base.endswith(".json"):
             base = base[:-5]
-        parts = base.rsplit("_", 2)  # 最后两段为 timestamp (YYYYMMDD_HHMMSS)
-        out_stem = parts[0] if len(parts) >= 3 else base
+        out_stem = base  # 完整 base 用于输出和 resume 匹配
 
         # Tiny 模式
         tiny_choice = input(
@@ -317,7 +314,7 @@ class JudgeOperator(OperatorABC):
         work_questions = [copy.deepcopy(q) for q in questions]
 
         # 断点续传
-        resume_path = _find_latest_resume_file(output_dir_resolved, out_stem, model_id_safe)
+        resume_path = _find_latest_resume_file(output_dir_resolved, out_stem)
         do_resume = False
         if resume_path and os.path.isfile(resume_path):
             print(f"\n检测到已有评分结果: {os.path.basename(resume_path)}")
@@ -345,7 +342,7 @@ class JudgeOperator(OperatorABC):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(
             output_dir_resolved,
-            f"{out_stem}_{model_id_safe}_judged_{timestamp}.json",
+            f"{out_stem}_judged_{timestamp}.json",
         )
         if do_resume:
             output_path = resume_path

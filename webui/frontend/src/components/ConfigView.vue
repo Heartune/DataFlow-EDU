@@ -4,7 +4,7 @@ import { useConfigStore } from '@/stores/config';
 import { listPresets } from '@/api/config';
 import { useToastStore } from '@/stores/toast';
 import DoughnutChart from '@/components/charts/DoughnutChart.vue';
-import type { TaxonomyItem, QuestionType, AbilityLevelItem } from '@/types/config';
+import type { TaxonomyItem, AbilityLevelItem } from '@/types/config';
 
 const configStore = useConfigStore();
 const toastStore = useToastStore();
@@ -221,7 +221,7 @@ function opValue(op: Record<string, unknown>, key: string): string | number | bo
             </div>
             <div class="space-y-1.5 ml-3">
               <div
-                v-for="(sub, j) in t.subcategories"
+                v-for="(_s, j) in t.subcategories"
                 :key="j"
                 class="flex items-center gap-2"
               >
@@ -389,7 +389,7 @@ function opValue(op: Record<string, unknown>, key: string): string | number | bo
             </div>
             <div class="space-y-1 ml-2">
               <div
-                v-for="(sub, j) in a.sublevels"
+                v-for="(_s, j) in a.sublevels"
                 :key="j"
                 class="flex gap-2"
               >

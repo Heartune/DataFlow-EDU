@@ -5,12 +5,13 @@ DataFlow-EDU: 学科数据集与评测基准生产管线扩展包
 """
 
 import os
-from pathlib import Path
 
 # 供 WebUI 配置校验脚本使用：仅加载配置模块，跳过算子等重量级导入
 if os.environ.get("DATAFLOW_EDU_CONFIG_ONLY"):
     __all__ = []
 else:
+    from pathlib import Path
+
     from dotenv import load_dotenv
 
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")

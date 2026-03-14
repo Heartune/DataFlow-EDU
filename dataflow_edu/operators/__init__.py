@@ -7,6 +7,7 @@ from dataflow_edu.operators.ambiguity_refinement_operator import AmbiguityRefine
 from dataflow_edu.operators.balancing_operator import BalancingOperator
 from dataflow_edu.operators.deduplication_operator import DeduplicationOperator
 from dataflow_edu.operators.execute_operator import ExecuteOperator
+from dataflow_edu.operators.judge_operator import JudgeOperator
 from dataflow_edu.operators.domain_cleaning_operator import DomainCleaningOperator
 from dataflow_edu.operators.domain_refinement_operator import DomainRefinementOperator
 from dataflow_edu.operators.generation_operator import GenerationOperator
@@ -18,6 +19,7 @@ __all__ = [
     "BalancingOperator",
     "DeduplicationOperator",
     "ExecuteOperator",
+    "JudgeOperator",
     "DomainCleaningOperator",
     "DomainRefinementOperator",
     "GenerationOperator",

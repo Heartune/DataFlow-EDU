@@ -18,7 +18,8 @@ from dataflow_edu.config.validator import validate_config
 
 def main():
     try:
-        data = json.load(sys.stdin)
+        raw = sys.stdin.buffer.read().decode("utf-8-sig")
+        data = json.loads(raw)
     except json.JSONDecodeError as e:
         print(json.dumps({"ok": False, "errors": [f"JSON 解析失败: {e}"]}, ensure_ascii=False))
         sys.exit(1)
