@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { Doughnut } from 'vue-chartjs';
 import {
   Chart as ChartJS,
@@ -27,19 +28,21 @@ const defaultColors = [
   '#6366F1',
   '#94A3B8',
 ];
-const cols = props.colors || defaultColors;
 
-const chartData = {
-  labels: props.labels,
-  datasets: [
-    {
-      data: props.data,
-      backgroundColor: props.labels.map((_, i) => cols[i % cols.length] + '22'),
-      borderColor: props.labels.map((_, i) => cols[i % cols.length]),
-      borderWidth: 2,
-    },
-  ],
-};
+const chartData = computed(() => {
+  const cols = props.colors || defaultColors;
+  return {
+    labels: props.labels,
+    datasets: [
+      {
+        data: props.data,
+        backgroundColor: props.labels.map((_, i) => cols[i % cols.length] + '22'),
+        borderColor: props.labels.map((_, i) => cols[i % cols.length]),
+        borderWidth: 2,
+      },
+    ],
+  };
+});
 
 const chartOptions = {
   responsive: true,

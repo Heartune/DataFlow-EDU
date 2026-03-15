@@ -10,6 +10,69 @@
 
 ---
 
+## 📖 Introducing DataFlow-EDU
+
+![](slide-deck/dataflow-edu/01-slide-cover.png)
+
+---
+
+![](slide-deck/dataflow-edu/02-slide-motivation.png)
+
+---
+
+![](slide-deck/dataflow-edu/03-slide-project-scope.png)
+
+---
+
+![](slide-deck/dataflow-edu/04-slide-architecture.png)
+
+---
+
+![](slide-deck/dataflow-edu/05-slide-taxonomy-config.png)
+
+---
+
+![](slide-deck/dataflow-edu/06-slide-mineru-ocr.png)
+
+---
+
+![](slide-deck/dataflow-edu/07-slide-generation.png)
+
+---
+
+![](slide-deck/dataflow-edu/08-slide-balancing.png)
+
+---
+
+![](slide-deck/dataflow-edu/09-slide-cleaning-pipeline.png)
+
+---
+
+![](slide-deck/dataflow-edu/10-slide-llm-judge-cleaning.png)
+
+---
+
+![](slide-deck/dataflow-edu/11-slide-execute-judge.png)
+
+---
+
+![](slide-deck/dataflow-edu/12-slide-webui.png)
+
+---
+
+![](slide-deck/dataflow-edu/13-slide-prior-work.png)
+
+---
+
+![](slide-deck/dataflow-edu/14-slide-dataflow-integration.png)
+
+---
+
+![](slide-deck/dataflow-edu/15-slide-back-cover.png)
+
+
+---
+
 ## DataFlow-EDU 方案设计图景
 
 我将这套 Workflow 映射到 DataFlow 的算子化 Operator 和管线化 Pipeline 架构中。
@@ -21,38 +84,6 @@
 项目应使用本地的 DataFlow 包（包含 get_logger、OperatorABC、OPERATOR_REGISTRY 等）。相关代码应将本地 DataFlow 加入 sys.path。
 
 涉及 LLM 交互的部分，可复用 `dataflow_edu.serving.llm_client`。该模块位于 `dataflow_edu/serving/` 目录下，作为通用 LLM 客户端，被需要它的算子共用。配置保存于项目根目录的 `.llm_config.json`。
-
-
-### 阶段一：Taxonomy & OCR
-
-这一阶段主要解决「考什么」和「从哪取数据」的问题。
-
-- **1.1 Configuration Manager：** 类似llamafactory，支持可视化、灵活配置“考察知识方向（大类-小类双层架构）” + “考察能力层级（也是主层级-子层级双层架构）” + “考察形式（题型）”。同时支持配置Pipeline 和各 Operator 的参数。注意这部分是用户手动配置。
-- **1.2 MinerU OCR Operator：** 批量输入高质量教材PDF图片（图片直接用wps的pdf转图片功能），调用 MinerU 引擎的批量处理 API，利用通用数据算子对每页提取文本、表格和复杂图文对，并清洗为标准化的 Markdown 格式。
-
-### 阶段二：Generation & Balancing 
-
-这一阶段负责将知识原料转化为题目，并保证题型分布的合理性。结果放在dataflow_edu\data\generation_and_balancing.
-
-基于config Manager配置的“考察知识方向（大类-小类）” + “考察能力层级（建议双层架构）” + “考察形式（题型）” 的系统设计与评测维度 
-
-- **2.1 Generation Operator：** 将解析后的文本按「每两页为一组」进行组合，作为 Context 输入给大模型，stage 1 判断该组合最适合的考察知识方向，stage 2 基于 configuration 进行批量化的习题与答案生成，并基于configuration中的能力层级和题型提供给大模型不同的Prompt，初步控制 “考察能力层级（建议也是双层架构）” + “考察形式（题型）”的分布（【2026-3-15更新】能力层级的分布控制，通过随机槽机制实现）
-- **2.2 Balancing Operator：** 基于 configuration，用于实现考察能力层级、题型分布不均衡时的补题。（注意对于知识方向的均衡程度也要分析，但是需要给用户建议让其增加相关语料而不是强制生成某个知识方向的题目）（【2026-3-15更新】注意，这个算子已经基本不再具有使用价值，因为我们在2.1阶段已经基于随机槽机制实现了精准的能力层级分布控制，而且题型在生成时也是写死的，不依赖 LLM 返回。现在这个算子的意义是提示用户知识方向的分布是否均衡。）
-
-### 阶段三：Cleaning & Refinement
-
-生成的数据将流经一系列严格配置的「清洗算子」，最终提纯为高质量语料。
-
-- **3.1 Ambiguity Cleaning Operator：** 检查二义性和剔除低质量样本。
-- **3.2 Ambiguity Refinement Operator：** 对于中质量样本，优化二义性。
-- **3.3 Domain Cleaning Operator：** 检查领域相关性和剔除低质量样本。
-- **3.4 Domain Refinement Operator：** 对于中质量样本，优化领域相关性。
-- **3.5 Deduplication Operator：** 利用N-Gram计算相似度，清洗掉高度重复的冗余题目。（似乎DataFlow中有？）
-- **3.6 Synthesis Operator：** 为题目生成解析。（暂时跳过）
-- **3.7 Translation Operator：** 执行多语言翻译，默认支持英法两种语言。支持检查残留源语言文本重新翻译。（暂时跳过）
-- **3.8 MCQ Verify Operator：** 专为选择题设计的清洗算子，检查选择题是否包含 ABCD 四个选项，没有的补上。optimize_answers有validate_choice_questions（检查ABCD）、complete_choice_options（缺失时补全）。（暂时跳过）
-
-> 建议注意，有能提升难度的地方可以自己改一下，比如生成一些东西的时候
 
 ### 阶段四：Execute & Judge
 
@@ -67,10 +98,93 @@
 
 ### WebUI
 
-阶段一、二、三的执行过程中，基于utils_from_CNLaw-Bench\stage_viewer.html的样式（同时借鉴DataFlow项目的WebUI中的功能，有做得好的要加上），设计一个统一的面板，可以看到各个节点的情况。
+Pipeline 看板（Vue 3 + Node.js）位于 `webui/`。启动方式：`cd webui && npm install && npm run dev`。
 
-Pipeline 看板（Vue 3 + Node.js）位于 `webui/`。启动方式：`cd webui && npm install && npm run dev`.
-
+![](webui/img_intro/PixPin_2026-03-15_11-36-15.png)
 
 ---
+
+![](webui/img_intro/PixPin_2026-03-15_11-36-34.png)
+
+---
+
+![](webui/img_intro/PixPin_2026-03-15_11-37-26.png)
+
+---
+
+![](webui/img_intro/PixPin_2026-03-15_11-41-24.png)
+
+---
+
+## 项目文件结构
+
+```
+DataFlow-EDU/
+├── README.md
+├── .llm_config.json          # LLM 配置（需自行创建）
+├── dataflow_edu/             # 主管线与算子包
+│   ├── edu_data_pipeline.py  # 命令行交互式入口
+│   ├── config/               # 配置加载、校验、CLI 管理
+│   │   ├── edu_config.yaml
+│   │   ├── loader.py, schema.py, validator.py
+│   │   ├── manager_cli.py
+│   │   └── presets/
+│   ├── operators/            # 各阶段算子
+│   │   ├── mineru_ocr_operator.py
+│   │   ├── generation_operator.py, balancing_operator.py
+│   │   ├── ambiguity_cleaning_operator.py, ambiguity_refinement_operator.py
+│   │   ├── domain_cleaning_operator.py, domain_refinement_operator.py
+│   │   ├── deduplication_operator.py
+│   │   ├── execute_operator.py, judge_operator.py
+│   │   └── ...
+│   ├── pipelines/            # 生成、MinerU 等管线
+│   ├── serving/              # 通用 LLM 客户端
+│   ├── judge/, execute/      # 评判与执行逻辑
+│   ├── balancing/, generation/
+│   ├── ambiguity_cleaning/, ambiguity_refinement/
+│   ├── domain_cleaning/, domain_refinement/, deduplication/
+│   └── data/                 # 管线产出数据
+│       ├── generation_and_balancing/
+│       ├── cleaning_and_refinement/
+│       └── execute_and_judge/
+├── webui/                    # Vue3 + Node 看板
+│   ├── frontend/             # 前端 (Vite, Vue, Pinia)
+│   │   └── src/
+│   │       ├── views/, components/, stores/, api/, types/
+│   │       └── App.vue
+│   ├── server/               # 后端 API
+│   │   └── src/
+│   └── README.md
+└── slide-deck/dataflow-edu/  # 演示文稿与配图
+```
+
+---
+
+## Quick Start
+
+1. **环境与依赖**
+   - 确保项目根目录下的 `DataFlow` 目录存在（管线会通过 `sys.path` 使用本地 DataFlow 包）。
+   - 在 `DataFlow`目录下运行 `pip install -e .`通过源码编译方式安装 DataFlow.
+
+2. **配置**
+   - 在项目根目录配置 LLM：创建 `.llm_config.json`，供生成、清洗、评测等算子调用大模型。
+   - 建议优先通过 **WebUI 看板** 配置知识方向、能力层级、题型及各算子参数。启动 WebUI：在项目根目录执行 `cd webui && npm install && npm run dev`，浏览器访问 http://localhost:5173。也可在管线菜单中运行 **1.1 Configuration Manager**，或直接编辑 `dataflow_edu/config/edu_config.yaml`。
+
+3. **运行管线**
+   - 在项目根目录执行：
+     ```bash
+     python -m dataflow_edu.edu_data_pipeline
+     ```
+   - 根据提示选择步骤：1.1 配置 → 1.2 MinerU OCR → 2.1 生成 → 2.2 均衡（可选）→ 阶段三清洗 → 4.1 执行 → 4.2 评判。
+
+4. **查看进度与结果**
+   - 启动 WebUI 看板：` npm run dev`，浏览器访问前端（如 http://localhost:5173）查看各阶段节点状态。
+   - 生成与均衡结果在 `dataflow_edu/data/generation_and_balancing/`，执行与评判结果在 `dataflow_edu/data/execute_and_judge/`。
+
+---
+
+## TODO
+
+- [ ] 有能提升难度的地方可以自己改一下，比如生成一些东西的时候
+- [ ] 优化webui设计，完善参数配置自由度，开发拖动控件和实时进度预览
 

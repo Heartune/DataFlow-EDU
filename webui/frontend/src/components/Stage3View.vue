@@ -81,18 +81,21 @@ function openQuestion(q: import('@/types/pipeline').Question) {
               label: '总题目数',
               value: stats?.total ?? 0,
               sub: `覆盖 ${Object.keys(stats?.categoryDist || {}).filter((k) => (stats?.categoryDist || {})[k] > 0).length} 个知识大类、${Object.keys(stats?.subcategoryDist || {}).filter((k) => (stats?.subcategoryDist || {})[k] > 0).length} 个知识小类`,
+              icon: 'list',
               accent: 'blue',
             },
             {
               label: '能力层级种类',
               value: Object.keys(stats?.levelDist || {}).filter((k) => (stats?.levelDist || {})[k] > 0).length,
               sub: Object.keys(stats?.levelDist || {}).filter((k) => (stats?.levelDist || {})[k] > 0).length >= 16 ? '已全覆盖' : `未全覆盖（已 ${Object.keys(stats?.levelDist || {}).filter((k) => (stats?.levelDist || {})[k] > 0).length}/16 种）`,
+              icon: 'pie',
               accent: 'indigo',
             },
             {
               label: '主观题占比',
               value: (stats?.subjectiveRatio ?? 0) + '%',
               sub: `主观题 ${Math.round((stats?.total ?? 0) * (parseInt(stats?.subjectiveRatio ?? '0') / 100))} 道 / 客观题 ${(stats?.total ?? 0) - Math.round((stats?.total ?? 0) * (parseInt(stats?.subjectiveRatio ?? '0') / 100))} 道`,
+              icon: 'edit',
               accent: 'amber',
               bar: parseInt(stats?.subjectiveRatio ?? '0'),
             },
@@ -100,13 +103,14 @@ function openQuestion(q: import('@/types/pipeline').Question) {
               label: '难度分布',
               value: `易${stats?.diffDist?.['易'] ?? 0} / 中${stats?.diffDist?.['中'] ?? 0} / 难${stats?.diffDist?.['难'] ?? 0}`,
               sub: `易 ${stats?.total ? Math.round(((stats?.diffDist?.['易'] ?? 0) / stats.total) * 100) : 0}% · 中 ${stats?.total ? Math.round(((stats?.diffDist?.['中'] ?? 0) / stats.total) * 100) : 0}% · 难 ${stats?.total ? Math.round(((stats?.diffDist?.['难'] ?? 0) / stats.total) * 100) : 0}%`,
+              icon: 'bar',
               accent: 'emerald',
             },
           ]"
           :key="c.label"
           class="bg-white rounded-xl shadow-sm border border-slate-200/60 p-5 animate-fade-in-up"
         >
-          <div class="flex items-start justify-between">
+          <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <p class="text-xs font-medium text-slate-500">{{ c.label }}</p>
               <p class="text-xl font-bold text-slate-900 mt-0.5">{{ c.value }}</p>
@@ -122,6 +126,20 @@ function openQuestion(q: import('@/types/pipeline').Question) {
                   :style="{ width: Math.min(100, c.bar) + '%' }"
                 />
               </div>
+            </div>
+            <div
+              class="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center"
+              :class="{
+                'bg-blue-100 text-blue-600': c.accent === 'blue',
+                'bg-indigo-100 text-indigo-600': c.accent === 'indigo',
+                'bg-amber-100 text-amber-600': c.accent === 'amber',
+                'bg-emerald-100 text-emerald-600': c.accent === 'emerald',
+              }"
+            >
+              <i v-if="c.icon === 'list'" class="fa-solid fa-list text-lg" aria-hidden="true"></i>
+              <i v-else-if="c.icon === 'pie'" class="fa-solid fa-chart-pie text-lg" aria-hidden="true"></i>
+              <i v-else-if="c.icon === 'edit'" class="fa-solid fa-pen text-lg" aria-hidden="true"></i>
+              <i v-else-if="c.icon === 'bar'" class="fa-solid fa-chart-column text-lg" aria-hidden="true"></i>
             </div>
           </div>
         </div>
