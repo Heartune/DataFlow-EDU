@@ -74,7 +74,7 @@
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/image?repos=Heartune/DataFlow-EDU&type=date&legend=top-left)](https://www.star-history.com/?repos=Heartune%2FDataFlow-EDU&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=Heartune/DataFlow-EDU&type=date&legend=top-left)](https://www.star-history.com/#Heartune/DataFlow-EDU&type=date&legend=top-left)
 
 ---
 
