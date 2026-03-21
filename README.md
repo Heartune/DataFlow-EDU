@@ -70,7 +70,16 @@
 
 ![](slide-deck/dataflow-edu/15-slide-back-cover.png)
 
+---
+## Star History
 
+<a href="https://www.star-history.com/?repos=Heartune%2FDataFlow-EDU&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=Heartune/DataFlow-EDU&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=Heartune/DataFlow-EDU&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=Heartune/DataFlow-EDU&type=date&legend=top-left" />
+ </picture>
+</a>
 ---
 
 ## DataFlow-EDU 方案设计图景
@@ -187,4 +196,4 @@ DataFlow-EDU/
 
 - [ ] 有能提升难度的地方可以自己改一下，比如生成一些东西的时候
 - [ ] 优化webui设计，完善参数配置自由度，开发拖动控件和实时进度预览
-
+- [ ] 优化终端与webui的联动，比如webui实时监控生成情况并同步，或终端每完成一个算子就给出对应阶段的webui url，方便用户快捷跳转

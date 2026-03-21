@@ -21,3 +21,6 @@ node_modules/
 # 含敏感信息的工具目录
 utils_from_CNLaw-Bench/
 utils_from_ROBOTheory/
+
+# Files over 100 MB (Automatically added)
+dataflow_edu/data/resources/pdf/网络与信息法学.pdf
