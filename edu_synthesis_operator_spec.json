@@ -1,0 +1,13 @@
+{
+  "package_name": "dataflow_edu_ops",
+  "operator_type": "generate",
+  "operator_class_name": "EduSynthesisOperator",
+  "operator_module_name": "edu_synthesis_operator",
+  "input_key": "question",
+  "output_key": "analysis",
+  "uses_llm": true,
+  "cli_module_name": "edu_synthesis_operator_cli",
+  "test_file_prefix": "edu_synthesis_operator",
+  "overwrite_strategy": "overwrite-all",
+  "validation_level": "full"
+}

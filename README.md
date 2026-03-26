@@ -96,12 +96,6 @@
 
 涉及 LLM 交互的部分，可复用 `dataflow_edu.serving.llm_client`。该模块位于 `dataflow_edu/serving/` 目录下，作为通用 LLM 客户端，被需要它的算子共用。配置保存于项目根目录的 `.llm_config.json`。
 
-### 阶段四：Execute & Judge
-
-将生成的 Benchmark 真正运行起来，检验目标模型的能力。结果放在dataflow_edu\data\execute_and_judge.
-
-- **4.1 Execute Operator：** 将待测的大模型接入系统进行作答，记录其答案。
-- **4.2 Judge Operator：** 对应 DataFlow 中的「基于正确答案 Question Verify 算子」，调用大模型作为裁判。
 
 ### 其他工具
 

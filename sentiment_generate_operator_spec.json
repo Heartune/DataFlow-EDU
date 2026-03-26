@@ -1,0 +1,11 @@
+{
+  "package_name": "custom_operators",
+  "operator_type": "generate",
+  "operator_class_name": "SentimentGenerateOperator",
+  "operator_module_name": "sentiment_generate_operator",
+  "input_key": "text",
+  "output_key": "sentiment",
+  "uses_llm": true,
+  "cli_module_name": "sentiment_generate_operator_cli",
+  "test_file_prefix": "sentiment_generate_operator"
+}
