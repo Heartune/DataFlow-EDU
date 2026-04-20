@@ -1,0 +1,55 @@
+# DataFlow-EDU 物理学科 preset 模板（M3 占位骨架）
+# TODO(M3+): 由学科顾问填入完整 taxonomy / question_types / ability_levels。
+#            生产前请把所有 TODO 项替换为正式内容，否则 generation/balancing 阶段
+#            会按非常稀疏的标签分布运行，结果质量无法保证。
+subject: 物理
+grade: 高中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+# TODO: 按人教版/统编版课程标准补全章节。
+- name: 力学
+  subcategories:
+  - 运动的描述
+  - 相互作用
+  - 牛顿运动定律
+- name: 电磁学
+  subcategories:
+  - 静电场
+  - 电路
+  - 磁场与电磁感应
+- name: 热学与光学
+  subcategories:
+  - 分子动理论
+  - 热力学定律
+  - 光的反射与折射
+question_types:
+- name: 选择题
+  weight: 0.3
+- name: 填空题
+  weight: 0.15
+- name: 计算题
+  weight: 0.4
+- name: 实验题
+  weight: 0.15
+ability_levels:
+# TODO: 按物理学科核心素养（物理观念 / 科学思维 / 科学探究 / 科学态度与责任）补全 sublevels 与 weight。
+- name: 物理观念
+  weight: 0.25
+  description: ""
+  sublevels: []
+- name: 科学思维
+  weight: 0.25
+  description: ""
+  sublevels: []
+- name: 科学探究
+  weight: 0.25
+  description: ""
+  sublevels: []
+- name: 科学态度与责任
+  weight: 0.25
+  description: ""
+  sublevels: []
+operators: {}

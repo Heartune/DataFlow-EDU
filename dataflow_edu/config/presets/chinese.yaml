@@ -1,0 +1,57 @@
+# DataFlow-EDU 语文学科 preset 模板（M3 占位骨架）
+# TODO(M3+): 由学科顾问填入完整 taxonomy / question_types / ability_levels。
+subject: 语文
+grade: 高中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+# TODO: 按统编版课标补全（建议覆盖 现代文阅读 / 古诗文阅读 / 语言文字运用 / 写作）。
+- name: 现代文阅读
+  subcategories:
+  - 论述类文本
+  - 实用类文本
+  - 文学类文本
+- name: 古诗文阅读
+  subcategories:
+  - 文言文阅读
+  - 古代诗歌鉴赏
+  - 名篇名句默写
+- name: 语言文字运用
+  subcategories:
+  - 字词与语法
+  - 语句衔接与修辞
+  - 图文转换
+- name: 写作
+  subcategories:
+  - 任务驱动型作文
+  - 材料作文
+question_types:
+- name: 选择题
+  weight: 0.25
+- name: 简答题
+  weight: 0.35
+- name: 默写题
+  weight: 0.1
+- name: 写作题
+  weight: 0.3
+ability_levels:
+# TODO: 按语文学科核心素养（语言建构与运用 / 思维发展与提升 / 审美鉴赏与创造 / 文化传承与理解）补全。
+- name: 语言建构与运用
+  weight: 0.25
+  description: ""
+  sublevels: []
+- name: 思维发展与提升
+  weight: 0.25
+  description: ""
+  sublevels: []
+- name: 审美鉴赏与创造
+  weight: 0.25
+  description: ""
+  sublevels: []
+- name: 文化传承与理解
+  weight: 0.25
+  description: ""
+  sublevels: []
+operators: {}

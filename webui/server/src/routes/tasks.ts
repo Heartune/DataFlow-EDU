@@ -7,7 +7,14 @@ import { spawn, type ChildProcess } from 'child_process';
 import chokidar from 'chokidar';
 import yaml from 'js-yaml';
 import archiver from 'archiver';
-import { getDb, todayKey, type TaskRow } from '../db.js';
+import {
+  cleanupExpiredExports,
+  getDb,
+  todayKey,
+  type TaskExportRow,
+  type TaskExportStatus,
+  type TaskRow,
+} from '../db.js';
 
 // EditView 允许编辑的 stage 白名单（防止越权访问其它路径）
 const EDITABLE_STAGES = new Set(['3_4_domain_refined', '3_7_translated', '3_8_mcq_verified']);
@@ -1272,6 +1279,451 @@ export function tasksRoutes(projectRoot: string): Router {
     }
     archive.finalize();
   });
+
+  // ---------------------------------------------------------------
+  // M3 异步导出：Word / PDF / JSON 三件套
+  //   - POST /:id/export-jobs：创建导出作业，spawn 子进程，返回 download_url（一次性 token）
+  //   - GET  /:id/export-jobs：列出当前 task 的导出历史（含状态）
+  //   - GET  /:id/export-jobs/:exportId：单个导出状态轮询
+  //   - GET  /:id/export-jobs/:exportId/download?token=xxx：一次性 token 下载
+  //
+  // 安全约束：
+  //   - 三个写/查接口都走 requireAuth + getOwnedTask 双重校验；
+  //   - 下载接口除 JWT 外还要求 query.token 命中 SHA256(token_hash)；
+  //   - token 单次有效，下载完成立即把 token_consumed=1，再次下载需要重新创建作业；
+  //   - 24h 后行 + 文件双双过期（cleanupExpiredExports 在 index.ts 启动 + 每 30min 执行）。
+  // ---------------------------------------------------------------
+
+  const SUPPORTED_EXPORT_FORMATS = new Set(['json', 'word', 'pdf']);
+  const SUPPORTED_EXPORT_VARIANTS = new Set(['with_answer', 'blank']);
+  const SUPPORTED_EXPORT_LANGS = new Set(['zh', 'en', 'fr']);
+  const EXPORT_TTL_MS = 24 * 60 * 60 * 1000;
+
+  function exportFileExt(format: string): string {
+    if (format === 'json') return 'json';
+    if (format === 'word') return 'docx';
+    if (format === 'pdf') return 'pdf';
+    return 'bin';
+  }
+
+  function safeFileBase(name: string): string {
+    return name.replace(/[^\w\u4e00-\u9fa5\-]+/g, '_').slice(0, 80) || 'task';
+  }
+
+  function exportRowToPublic(row: TaskExportRow): Record<string, unknown> {
+    // 不暴露 token_hash / file_path 等内部字段
+    return {
+      id: row.id,
+      task_id: row.task_id,
+      format: row.format,
+      variant: row.variant,
+      lang: row.lang,
+      stage: row.stage,
+      status: row.status,
+      file_name: row.file_name,
+      size_bytes: row.size_bytes,
+      error_message: row.error_message,
+      token_consumed: row.token_consumed === 1,
+      expires_at: row.expires_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  function buildDownloadUrl(taskId: string, exportId: string, token: string): string {
+    return `/api/tasks/${encodeURIComponent(taskId)}/export-jobs/${encodeURIComponent(
+      exportId
+    )}/download?token=${encodeURIComponent(token)}`;
+  }
+
+  function spawnExportChild(
+    exportId: string,
+    task: TaskRow,
+    uid: string,
+    args: {
+      format: string;
+      variant: string;
+      lang: string;
+      stage: string;
+      taskDir: string;
+      outputPath: string;
+    }
+  ): void {
+    const pythonBin = process.env.PYTHON_BIN || 'python';
+    const dataflowLocal = path.join(projectRoot, 'DataFlow');
+    const pythonPath = [dataflowLocal, projectRoot, process.env.PYTHONPATH || '']
+      .filter(Boolean)
+      .join(path.delimiter);
+
+    const childArgs = [
+      '-m',
+      'dataflow_edu.export',
+      '--task-dir',
+      args.taskDir,
+      '--output',
+      args.outputPath,
+      '--format',
+      args.format,
+      '--lang',
+      args.lang,
+      '--stage',
+      args.stage,
+      '--task-name',
+      task.name,
+    ];
+    if (args.format !== 'json') {
+      childArgs.push('--variant', args.variant);
+    }
+    if (args.format === 'json') {
+      childArgs.push('--keep-raw');
+    }
+
+    const child = spawn(pythonBin, childArgs, {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        PYTHONPATH: pythonPath,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1',
+        DATAFLOW_EDU_CONFIG_ONLY: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    const db = getDb();
+    db.prepare(
+      "UPDATE task_exports SET status = ?, updated_at = ? WHERE id = ?"
+    ).run('running', Date.now(), exportId);
+
+    let stdoutBuf = '';
+    let stderrBuf = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdoutBuf += chunk.toString('utf-8');
+      if (stdoutBuf.length > 64 * 1024) stdoutBuf = stdoutBuf.slice(-64 * 1024);
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderrBuf += chunk.toString('utf-8');
+      if (stderrBuf.length > 64 * 1024) stderrBuf = stderrBuf.slice(-64 * 1024);
+    });
+
+    child.on('error', (err) => {
+      console.error(`[exports] spawn error for ${exportId}:`, err);
+      try {
+        getDb()
+          .prepare(
+            'UPDATE task_exports SET status = ?, error_message = ?, updated_at = ? WHERE id = ?'
+          )
+          .run('failed', `spawn_failed: ${err.message}`, Date.now(), exportId);
+      } catch (dbErr) {
+        console.error('[exports] update failed status failed:', dbErr);
+      }
+    });
+
+    child.on('exit', (code) => {
+      const now = Date.now();
+      if (code === 0 && fs.existsSync(args.outputPath)) {
+        let sizeBytes = 0;
+        try {
+          sizeBytes = fs.statSync(args.outputPath).size;
+        } catch {
+          /* ignore */
+        }
+        try {
+          getDb()
+            .prepare(
+              'UPDATE task_exports SET status = ?, file_path = ?, size_bytes = ?, updated_at = ? WHERE id = ?'
+            )
+            .run('succeeded', args.outputPath, sizeBytes, now, exportId);
+        } catch (err) {
+          console.error('[exports] mark succeeded failed:', err);
+        }
+        return;
+      }
+      // 失败：尝试从 stderr 解析 JSON 错误，否则降级为字符串
+      let msg = stderrBuf.trim().slice(-500);
+      try {
+        const lastLine = stderrBuf.trim().split(/\r?\n/).pop() || '';
+        const parsed = JSON.parse(lastLine);
+        if (parsed && typeof parsed === 'object' && parsed.message) {
+          msg = String(parsed.message).slice(0, 500);
+        }
+      } catch {
+        /* ignore */
+      }
+      if (!msg) msg = `子进程异常退出 (code=${code ?? 'null'})`;
+      try {
+        getDb()
+          .prepare(
+            'UPDATE task_exports SET status = ?, error_message = ?, updated_at = ? WHERE id = ?'
+          )
+          .run('failed', msg, now, exportId);
+      } catch (err) {
+        console.error('[exports] mark failed failed:', err);
+      }
+      // 删除残留的不完整文件
+      if (fs.existsSync(args.outputPath)) {
+        try {
+          fs.unlinkSync(args.outputPath);
+        } catch {
+          /* ignore */
+        }
+      }
+      void uid;
+    });
+  }
+
+  router.post('/:id/export-jobs', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+
+    const format = String(req.query.format || req.body?.format || '').toLowerCase();
+    const variant = String(req.query.variant || req.body?.variant || 'with_answer').toLowerCase();
+    const lang = String(req.query.lang || req.body?.lang || 'zh').toLowerCase();
+    const stage = String(req.query.stage || req.body?.stage || '3_8_mcq_verified').trim();
+
+    if (!SUPPORTED_EXPORT_FORMATS.has(format)) {
+      res.status(400).json({ error: 'invalid_format', message: '仅支持 json/word/pdf' });
+      return;
+    }
+    if (format !== 'json' && !SUPPORTED_EXPORT_VARIANTS.has(variant)) {
+      res.status(400).json({ error: 'invalid_variant', message: '仅支持 with_answer/blank' });
+      return;
+    }
+    if (!SUPPORTED_EXPORT_LANGS.has(lang)) {
+      res.status(400).json({ error: 'invalid_lang', message: '仅支持 zh/en/fr' });
+      return;
+    }
+    if (!EDITABLE_STAGES.has(stage)) {
+      res.status(400).json({ error: 'invalid_stage' });
+      return;
+    }
+
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    if (!fs.existsSync(taskDir)) {
+      res.status(404).json({ error: 'task_dir_missing' });
+      return;
+    }
+    const stageDir = path.join(taskDir, stage);
+    if (!fs.existsSync(stageDir)) {
+      res.status(404).json({
+        error: 'stage_not_ready',
+        message: '该阶段尚未产出任何文件，无法导出',
+      });
+      return;
+    }
+
+    // 顺手清一遍过期数据
+    try {
+      cleanupExpiredExports();
+    } catch (err) {
+      console.warn('[exports] cleanup before create failed:', err);
+    }
+
+    const exportId = crypto.randomUUID();
+    const ext = exportFileExt(format);
+    const safeBase = safeFileBase(task.name);
+    const variantSuffix = format === 'json' ? '' : `_${variant}`;
+    const fileName = `${safeBase}_${stage}_${lang}${variantSuffix}.${ext}`;
+    const exportDir = path.join(taskDir, '_exports');
+    ensureDir(exportDir);
+    const outputPath = path.join(exportDir, `${exportId}.${ext}`);
+
+    // 一次性 token：原文 32 字节 base64，DB 只存 SHA-256
+    const token = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const now = Date.now();
+    const expiresAt = now + EXPORT_TTL_MS;
+
+    try {
+      getDb()
+        .prepare(
+          `INSERT INTO task_exports (
+            id, task_id, user_id, format, variant, lang, stage,
+            status, file_path, file_name, size_bytes, error_message,
+            token_hash, token_consumed, expires_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, NULL, NULL, ?, 0, ?, ?, ?)`
+        )
+        .run(
+          exportId,
+          task.id,
+          req.user.id,
+          format,
+          format === 'json' ? '' : variant,
+          lang,
+          stage,
+          fileName,
+          tokenHash,
+          expiresAt,
+          now,
+          now
+        );
+    } catch (err) {
+      console.error('[exports] insert row failed:', err);
+      res.status(500).json({ error: 'db_insert_failed' });
+      return;
+    }
+
+    spawnExportChild(exportId, task, req.user.id, {
+      format,
+      variant,
+      lang,
+      stage,
+      taskDir,
+      outputPath,
+    });
+
+    res.status(202).json({
+      ok: true,
+      export_id: exportId,
+      status: 'pending' as TaskExportStatus,
+      file_name: fileName,
+      expires_at: expiresAt,
+      status_url: `/api/tasks/${encodeURIComponent(task.id)}/export-jobs/${encodeURIComponent(
+        exportId
+      )}`,
+      download_url: buildDownloadUrl(task.id, exportId, token),
+    });
+  });
+
+  router.get('/:id/export-jobs', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    try {
+      cleanupExpiredExports();
+    } catch {
+      /* ignore */
+    }
+    const rows = getDb()
+      .prepare(
+        'SELECT * FROM task_exports WHERE task_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 50'
+      )
+      .all(task.id, req.user.id) as TaskExportRow[];
+    res.json({ items: rows.map(exportRowToPublic) });
+  });
+
+  router.get('/:id/export-jobs/:exportId', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const row = getDb()
+      .prepare(
+        'SELECT * FROM task_exports WHERE id = ? AND task_id = ? AND user_id = ?'
+      )
+      .get(req.params.exportId, task.id, req.user.id) as TaskExportRow | undefined;
+    if (!row) {
+      res.status(404).json({ error: 'export_not_found' });
+      return;
+    }
+    res.json(exportRowToPublic(row));
+  });
+
+  router.get(
+    '/:id/export-jobs/:exportId/download',
+    (req: Request, res: Response) => {
+      if (!req.user) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
+      const task = getOwnedTask(req, req.params.id);
+      if (!task) {
+        res.status(404).json({ error: 'task_not_found' });
+        return;
+      }
+      const token = String(req.query.token || '').trim();
+      if (!token) {
+        res.status(400).json({ error: 'missing_token' });
+        return;
+      }
+
+      const db = getDb();
+      const row = db
+        .prepare(
+          'SELECT * FROM task_exports WHERE id = ? AND task_id = ? AND user_id = ?'
+        )
+        .get(req.params.exportId, task.id, req.user.id) as TaskExportRow | undefined;
+      if (!row) {
+        res.status(404).json({ error: 'export_not_found' });
+        return;
+      }
+      if (row.expires_at < Date.now()) {
+        res.status(410).json({ error: 'expired' });
+        return;
+      }
+      if (row.status !== 'succeeded') {
+        res.status(409).json({ error: 'not_ready', status: row.status });
+        return;
+      }
+      if (row.token_consumed === 1) {
+        res.status(410).json({ error: 'token_consumed' });
+        return;
+      }
+      const provided = crypto.createHash('sha256').update(token).digest('hex');
+      // 用 timingSafeEqual 防止时序攻击
+      const a = Buffer.from(provided, 'hex');
+      const b = Buffer.from(row.token_hash, 'hex');
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        res.status(403).json({ error: 'invalid_token' });
+        return;
+      }
+      if (!row.file_path || !fs.existsSync(row.file_path)) {
+        res.status(410).json({ error: 'file_missing' });
+        return;
+      }
+
+      // 标记 token 已用，再开始流式发送
+      try {
+        db.prepare(
+          'UPDATE task_exports SET token_consumed = 1, updated_at = ? WHERE id = ?'
+        ).run(Date.now(), row.id);
+      } catch (err) {
+        console.error('[exports] mark token consumed failed:', err);
+      }
+
+      const filename = row.file_name || path.basename(row.file_path);
+      const mime =
+        row.format === 'pdf'
+          ? 'application/pdf'
+          : row.format === 'word'
+            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : 'application/json; charset=utf-8';
+      res.setHeader('Content-Type', mime);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`
+      );
+      const stream = fs.createReadStream(row.file_path);
+      stream.on('error', (err) => {
+        console.error('[exports] stream error:', err);
+        try {
+          res.status(500).end();
+        } catch {
+          /* ignore */
+        }
+      });
+      stream.pipe(res);
+    }
+  );
 
   return router;
 }

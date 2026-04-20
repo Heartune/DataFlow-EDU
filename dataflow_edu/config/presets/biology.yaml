@@ -1,3 +1,9 @@
+subject: 生物学
+grade: 高中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
 taxonomy:
 - name: 分子与细胞
   subcategories:

@@ -1,0 +1,59 @@
+# DataFlow-EDU 数学学科 preset 模板（M3 占位骨架）
+# TODO(M3+): 由学科顾问填入完整 taxonomy / question_types / ability_levels。
+subject: 数学
+grade: 高中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+# TODO: 按人教版课程标准补全。
+- name: 代数
+  subcategories:
+  - 集合与函数
+  - 数列
+  - 不等式
+- name: 几何
+  subcategories:
+  - 平面几何
+  - 立体几何
+  - 解析几何
+- name: 概率与统计
+  subcategories:
+  - 计数原理
+  - 概率
+  - 统计
+question_types:
+- name: 选择题
+  weight: 0.3
+- name: 填空题
+  weight: 0.2
+- name: 解答题
+  weight: 0.5
+ability_levels:
+# TODO: 按数学学科核心素养（数学抽象 / 逻辑推理 / 数学建模 / 直观想象 / 数学运算 / 数据分析）补全。
+- name: 数学抽象
+  weight: 0.17
+  description: ""
+  sublevels: []
+- name: 逻辑推理
+  weight: 0.17
+  description: ""
+  sublevels: []
+- name: 数学建模
+  weight: 0.17
+  description: ""
+  sublevels: []
+- name: 直观想象
+  weight: 0.17
+  description: ""
+  sublevels: []
+- name: 数学运算
+  weight: 0.17
+  description: ""
+  sublevels: []
+- name: 数据分析
+  weight: 0.15
+  description: ""
+  sublevels: []
+operators: {}

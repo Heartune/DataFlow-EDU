@@ -2,7 +2,7 @@
 """DataFlow-EDU 配置 Schema 定义。"""
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List
 
 
 @dataclass
@@ -192,17 +192,32 @@ class JudgeConfig:
 
 @dataclass
 class EduConfig:
-    """DataFlow-EDU 完整配置。"""
+    """DataFlow-EDU 完整配置。
+
+    M3 起新增 `subject` / `grade` / `default_difficulty_distribution` 三个顶级字段，
+    与各学科 preset YAML 对齐，用于：
+      - subject/grade：导出 Word/PDF 时写在文件元信息和封面；
+      - default_difficulty_distribution：在 generation/balancing 阶段做难度比例兜底
+        （键须用「易/中/难」中文，与现有 `difficulty` 字段保持一致）。
+    """
 
     taxonomy: List[TaxonomyItem] = field(default_factory=list)
     question_types: List[QuestionType] = field(default_factory=list)
     ability_levels: List[AbilityLevelItem] = field(default_factory=list)
     operators: dict = field(default_factory=dict)  # {"mineru_ocr": MinerUOCRConfig}
+    subject: str = ""
+    grade: str = ""
+    default_difficulty_distribution: Dict[str, float] = field(
+        default_factory=lambda: {"易": 0.3, "中": 0.5, "难": 0.2}
+    )
 
 
 def default_config() -> EduConfig:
     """生成默认配置（含示例 taxonomy、题型、能力层级、1.2 参数）。"""
     return EduConfig(
+        subject="生物学",
+        grade="高中",
+        default_difficulty_distribution={"易": 0.3, "中": 0.5, "难": 0.2},
         taxonomy=[
             TaxonomyItem(name="生物竞赛", subcategories=["遗传学", "细胞生物学", "生态学"]),
             TaxonomyItem(name="化学竞赛", subcategories=["有机化学", "无机化学"]),

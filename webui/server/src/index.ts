@@ -9,7 +9,7 @@ import { pipelineRoutes } from './routes/pipeline.js';
 import { authRoutes } from './routes/auth.js';
 import { tasksRoutes, reconcileOrphanedRunningTasks } from './routes/tasks.js';
 import { requireAuth } from './middleware/auth.js';
-import { getDb } from './db.js';
+import { getDb, cleanupExpiredExports } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../../..');
@@ -20,6 +20,21 @@ getDb();
 // 否则其 DB 状态会永远卡在 running，对应内存里又没有 child，
 // 用户既无法停止也无法重跑。
 reconcileOrphanedRunningTasks(projectRoot);
+
+// M3：导出文件 24h 后过期；启动时清一遍，并按 30min 节奏轮训。
+try {
+  const r = cleanupExpiredExports();
+  if (r.removed > 0) console.log(`[db] cleaned ${r.removed} expired exports on boot`);
+} catch (err) {
+  console.warn('[db] cleanupExpiredExports on boot failed', err);
+}
+setInterval(() => {
+  try {
+    cleanupExpiredExports();
+  } catch (err) {
+    console.warn('[db] cleanupExpiredExports interval failed', err);
+  }
+}, 30 * 60 * 1000).unref();
 
 const app = express();
 const PORT = process.env.PORT || 3000;

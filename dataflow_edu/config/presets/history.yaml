@@ -1,0 +1,55 @@
+# DataFlow-EDU 历史学科 preset 模板（M3 占位骨架）
+# TODO(M3+): 由学科顾问填入完整 taxonomy / question_types / ability_levels。
+subject: 历史
+grade: 高中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+# TODO: 按统编版课标补全（《中外历史纲要》上下册 + 选择性必修）。
+- name: 中国古代史
+  subcategories:
+  - 先秦至秦汉
+  - 三国两晋南北朝至隋唐
+  - 宋元明清
+- name: 中国近现代史
+  subcategories:
+  - 晚清至民国
+  - 新民主主义革命
+  - 中华人民共和国史
+- name: 世界史
+  subcategories:
+  - 古代世界
+  - 近代世界
+  - 现代世界
+question_types:
+- name: 选择题
+  weight: 0.4
+- name: 材料题
+  weight: 0.4
+- name: 论述题
+  weight: 0.2
+ability_levels:
+# TODO: 按历史学科核心素养（唯物史观 / 时空观念 / 史料实证 / 历史解释 / 家国情怀）补全。
+- name: 唯物史观
+  weight: 0.2
+  description: ""
+  sublevels: []
+- name: 时空观念
+  weight: 0.2
+  description: ""
+  sublevels: []
+- name: 史料实证
+  weight: 0.2
+  description: ""
+  sublevels: []
+- name: 历史解释
+  weight: 0.2
+  description: ""
+  sublevels: []
+- name: 家国情怀
+  weight: 0.2
+  description: ""
+  sublevels: []
+operators: {}

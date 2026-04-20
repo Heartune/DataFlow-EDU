@@ -40,6 +40,9 @@ def get_config_path(project_root: Optional[str] = None) -> str:
 def _config_to_dict(config: EduConfig) -> dict:
     """将 EduConfig 转为可序列化的 dict。"""
     return {
+        "subject": config.subject,
+        "grade": config.grade,
+        "default_difficulty_distribution": dict(config.default_difficulty_distribution or {}),
         "taxonomy": [
             {"name": t.name, "subcategories": t.subcategories}
             for t in config.taxonomy
@@ -383,7 +386,16 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
         output_dir=str(judge_op.get("output_dir", judge_defaults.output_dir)),
     )
 
+    raw_diff = d.get("default_difficulty_distribution")
+    if isinstance(raw_diff, dict):
+        diff_dist = {str(k): float(v) for k, v in raw_diff.items()}
+    else:
+        diff_dist = {"易": 0.3, "中": 0.5, "难": 0.2}
+
     return EduConfig(
+        subject=str(d.get("subject", "") or ""),
+        grade=str(d.get("grade", "") or ""),
+        default_difficulty_distribution=diff_dist,
         taxonomy=taxonomy,
         question_types=question_types,
         ability_levels=ability_levels,

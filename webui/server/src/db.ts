@@ -28,6 +28,28 @@ export interface TaskRow {
   meta_json: string;
 }
 
+export type TaskExportStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+
+export interface TaskExportRow {
+  id: string;
+  task_id: string;
+  user_id: string;
+  format: 'json' | 'word' | 'pdf';
+  variant: string; // with_answer | blank | ''（json 时空）
+  lang: string;    // zh | en | fr
+  stage: string;   // 来源 stage 名
+  status: TaskExportStatus;
+  file_path: string | null;       // 绝对路径，下载时校验存在
+  file_name: string | null;       // 给浏览器看的下载名
+  size_bytes: number | null;
+  error_message: string | null;
+  token_hash: string;             // 一次性下载 token 的 SHA-256，下载后清空
+  token_consumed: 0 | 1;
+  expires_at: number;             // 过期时间戳（ms）；24h
+  created_at: number;
+  updated_at: number;
+}
+
 let db: Database.Database | null = null;
 
 function ensureDir(p: string) {
@@ -66,7 +88,68 @@ function initSchema(database: Database.Database) {
       count INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (user_id, day)
     );
+
+    CREATE TABLE IF NOT EXISTS task_exports (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      format TEXT NOT NULL,
+      variant TEXT NOT NULL DEFAULT '',
+      lang TEXT NOT NULL DEFAULT 'zh',
+      stage TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      file_path TEXT,
+      file_name TEXT,
+      size_bytes INTEGER,
+      error_message TEXT,
+      token_hash TEXT NOT NULL,
+      token_consumed INTEGER NOT NULL DEFAULT 0,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_exports_task ON task_exports(task_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_task_exports_expire ON task_exports(expires_at);
   `);
+}
+
+/**
+ * 清理已过期的导出记录与磁盘文件。
+ *
+ * 触发时机：
+ * - 进程启动后立即跑一次（见 `index.ts`）；
+ * - 每 30 分钟跑一次（setInterval）；
+ * - 用户主动新建/查询导出时也可顺手调用。
+ *
+ * 清理规则：`expires_at < now` 的全部行删除，并尝试 unlink 对应文件；
+ * 文件不存在或 unlink 失败都吞掉（只记 warn），不阻塞主流程。
+ */
+export function cleanupExpiredExports(): { removed: number } {
+  const database = getDb();
+  const now = Date.now();
+  const rows = database
+    .prepare('SELECT id, file_path FROM task_exports WHERE expires_at < ?')
+    .all(now) as Array<{ id: string; file_path: string | null }>;
+
+  for (const r of rows) {
+    if (r.file_path) {
+      try {
+        if (fs.existsSync(r.file_path)) fs.unlinkSync(r.file_path);
+      } catch (err) {
+        console.warn(`[db] cleanup export file failed: ${r.file_path}`, err);
+      }
+    }
+  }
+
+  if (rows.length > 0) {
+    const placeholders = rows.map(() => '?').join(',');
+    database
+      .prepare(`DELETE FROM task_exports WHERE id IN (${placeholders})`)
+      .run(...rows.map((r) => r.id));
+  }
+  return { removed: rows.length };
 }
 
 function seedAdmin(database: Database.Database) {
