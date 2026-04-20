@@ -196,10 +196,30 @@ def _now_iso() -> str:
 
 
 class ProgressTracker:
-    def __init__(self, task_dir: str, task_id: str, task_name: str, stages: list[str]):
+    def __init__(
+        self,
+        task_dir: str,
+        task_id: str,
+        task_name: str,
+        stages: list[str],
+        preserved_states: dict[str, dict] | None = None,
+    ):
         self.task_dir = task_dir
         self.path = os.path.join(task_dir, "progress.json")
         os.makedirs(task_dir, exist_ok=True)
+        preserved = preserved_states or {}
+        stage_entries: list[dict[str, Any]] = []
+        for s in stages:
+            if s in preserved:
+                entry: dict[str, Any] = {"name": s, "status": "succeeded"}
+                ts = preserved[s] or {}
+                if ts.get("started_at"):
+                    entry["started_at"] = ts["started_at"]
+                if ts.get("finished_at"):
+                    entry["finished_at"] = ts["finished_at"]
+                stage_entries.append(entry)
+            else:
+                stage_entries.append({"name": s, "status": "pending"})
         self.state: dict[str, Any] = {
             "task_id": task_id,
             "task_name": task_name,
@@ -208,7 +228,7 @@ class ProgressTracker:
             "started_at": _now_iso(),
             "finished_at": None,
             "error": None,
-            "stages": [{"name": s, "status": "pending"} for s in stages],
+            "stages": stage_entries,
         }
         self._flush()
 
@@ -371,6 +391,99 @@ _STAGE_SENTINELS: dict[str, str | None] = {
 }
 
 
+# 阶段产物目录（相对 task_dir）。续跑某 stage 前会把这些目录递归清掉，避免上次半成品干扰本次。
+# 新增 stage 时必须同步在这里登记，否则续跑会复用旧产物，看起来"瞬间通过"。
+_STAGE_OUTPUT_DIRS: dict[str, list[str]] = {
+    "1.1 PDF→Images": ["1_2_ocr/img"],
+    "1.2 MinerU OCR": ["1_2_ocr/md"],
+    "2.1 Generation": [
+        "2_1_generation/2_1_generated_stage_1",
+        "2_1_generation/2_1_generated_stage_2",
+    ],
+    "2.2 Balancing": ["2_1_generation/2_2_balanced"],
+    "3.1 Ambiguity Cleaning": ["3_1_ambiguity_cleaned"],
+    "3.2 Ambiguity Refinement": ["3_2_ambiguity_refined"],
+    "3.3 Domain Cleaning": ["3_3_domain_cleaned"],
+    "3.4 Domain Refinement": ["3_4_domain_refined"],
+    "3.5 Deduplication": ["3_5_deduplicated"],
+    "3.6 Synthesis": ["3_6_synthesized"],
+    "3.7 Translation": ["3_7_translated"],
+    "3.8 MCQ Verify": ["3_8_mcq_verified"],
+}
+
+
+def _wipe_task_dir(task_dir: str, keep: tuple[str, ...] = ("input.pdf",)) -> None:
+    """删除 task_dir 下除 keep 之外的所有内容（包括 progress.json / runner.log / 各 stage 子目录）。"""
+    import shutil
+
+    if not os.path.isdir(task_dir):
+        return
+    keep_set = {k.lower() for k in keep}
+    for entry in os.listdir(task_dir):
+        if entry.lower() in keep_set:
+            continue
+        full = os.path.join(task_dir, entry)
+        try:
+            if os.path.isdir(full) and not os.path.islink(full):
+                shutil.rmtree(full, ignore_errors=True)
+            else:
+                os.remove(full)
+        except Exception as e:
+            print(f"[wipe] 跳过 {full}: {e}", flush=True)
+
+
+def _wipe_stage_outputs(task_dir: str, stage_name: str) -> None:
+    """递归删除指定 stage 在 task_dir 下登记的产物目录，再重建为空目录。"""
+    import shutil
+
+    rels = _STAGE_OUTPUT_DIRS.get(stage_name, [])
+    for rel in rels:
+        full = os.path.join(task_dir, rel.replace("/", os.sep))
+        if os.path.isdir(full):
+            try:
+                shutil.rmtree(full, ignore_errors=True)
+            except Exception as e:
+                print(f"[wipe-stage] 跳过 {full}: {e}", flush=True)
+        try:
+            os.makedirs(full, exist_ok=True)
+        except Exception as e:
+            print(f"[wipe-stage] 无法重建 {full}: {e}", flush=True)
+
+
+def _load_preserved_states(task_dir: str, resume_from: str) -> dict[str, dict]:
+    """
+    读旧 progress.json，把所有 status==succeeded 且名次在 resume_from 之前的 stage 状态保留下来，
+    供 ProgressTracker 回填，UI 续跑后仍能看到历史时间戳。
+    """
+    p = os.path.join(task_dir, "progress.json")
+    if not os.path.isfile(p):
+        return {}
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            old = json.load(f)
+    except Exception:
+        return {}
+    stage_order = [s[0] for s in STAGES]
+    try:
+        cutoff_idx = stage_order.index(resume_from)
+    except ValueError:
+        cutoff_idx = len(stage_order)
+    preserved: dict[str, dict] = {}
+    for s in old.get("stages", []) or []:
+        name = s.get("name")
+        if not name or s.get("status") != "succeeded":
+            continue
+        if name not in stage_order:
+            continue
+        if stage_order.index(name) >= cutoff_idx:
+            continue
+        preserved[name] = {
+            "started_at": s.get("started_at"),
+            "finished_at": s.get("finished_at"),
+        }
+    return preserved
+
+
 def _pdf_to_images(task_name: str, task_dir: str, input_pdf: str, dpi: int = 100) -> None:
     """
     将 input.pdf 转为 <img_dir>/<task_name>/page_NNN.png，供 MinerU OCR 扫描。
@@ -513,6 +626,16 @@ def main() -> int:
     parser.add_argument("--task-dir", required=True)
     parser.add_argument("--input-pdf", required=True)
     parser.add_argument("--task-name", default="")
+    parser.add_argument(
+        "--resume-from",
+        default="",
+        help="续跑：从该 stage 开始，之前 succeeded 的 stage 直接跳过；必须是 STAGES 里的完整阶段名",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="从头重跑：清掉 task_dir 下除 input.pdf 之外的所有内容后再开始",
+    )
     args = parser.parse_args()
 
     # 强制非交互模式
@@ -526,7 +649,28 @@ def main() -> int:
     safe_name = "".join(c for c in task_name if c not in '\\/:*?"<>|').strip() or "task"
 
     stage_names = [s[0] for s in STAGES]
-    progress = ProgressTracker(task_dir, args.task_id, safe_name, stage_names)
+
+    # --reset 与 --resume-from 互斥；--reset 优先生效
+    resume_from = (args.resume_from or "").strip()
+    if args.reset:
+        if resume_from:
+            print("[runner] --reset 与 --resume-from 同时提供，忽略 --resume-from", flush=True)
+            resume_from = ""
+        _wipe_task_dir(task_dir)
+
+    preserved: dict[str, dict] = {}
+    if resume_from:
+        if resume_from not in stage_names:
+            print(f"[runner] 未知的 --resume-from={resume_from!r}，回退为完整运行", flush=True)
+            resume_from = ""
+        else:
+            preserved = _load_preserved_states(task_dir, resume_from)
+            # 清掉续跑起点 stage 的产物，避免半成品干扰算子内部 skip_existing 判断
+            _wipe_stage_outputs(task_dir, resume_from)
+
+    progress = ProgressTracker(
+        task_dir, args.task_id, safe_name, stage_names, preserved_states=preserved
+    )
 
     # 注入配置 + LLM 非交互初始化（在所有 run 之前完成）
     try:
@@ -544,6 +688,9 @@ def main() -> int:
     from dataflow_edu import edu_data_pipeline as edp
 
     for name, fn_name in STAGES:
+        if name in preserved:
+            print(f"========== [stage skip-preserved] {name} ==========", flush=True)
+            continue
         if fn_name is None:
             if name == "1.1 PDF→Images":
                 ok = _run_stage(

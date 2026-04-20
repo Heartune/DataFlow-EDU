@@ -16,6 +16,9 @@ interface RunningProc {
 // 单用户互斥锁：同一用户同时只允许一个 running 任务
 const runningByUser = new Map<string, RunningProc>();
 
+// 被 /stop 主动杀掉的任务 id 集合：child.exit 时据此把最终状态记为 cancelled 而不是 failed
+const stoppingTasks = new Set<string>();
+
 function userTaskRoot(projectRoot: string, uid: string, taskId: string): string {
   return path.join(projectRoot, 'dataflow_edu', 'data', 'users', uid, taskId);
 }
@@ -102,50 +105,52 @@ export function tasksRoutes(projectRoot: string): Router {
     res.json({ task_id: taskId, name, status: 'created' });
   });
 
-  router.post('/:id/run', (req: Request, res: Response) => {
-    if (!req.user) {
-      res.status(401).json({ error: 'unauthorized' });
-      return;
-    }
-    const db = getDb();
-    const task = db
-      .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?')
-      .get(req.params.id, req.user.id) as TaskRow | undefined;
-    if (!task) {
-      res.status(404).json({ error: 'task_not_found' });
-      return;
-    }
-    if (task.status === 'running') {
-      res.status(409).json({ error: 'task_already_running' });
-      return;
-    }
-    const existing = runningByUser.get(req.user.id);
-    if (existing) {
-      res.status(409).json({ error: 'user_has_running_task', running_task_id: existing.taskId });
-      return;
-    }
+  type SpawnGuardError =
+    | 'task_already_running'
+    | 'user_has_running_task'
+    | 'missing_llm_key'
+    | 'pdf_missing';
 
+  interface SpawnFailure {
+    error: SpawnGuardError;
+    status: number;
+    extra?: Record<string, unknown>;
+  }
+
+  function spawnRunner(
+    req: Request,
+    task: TaskRow,
+    extraArgs: string[]
+  ): SpawnFailure | { ok: true } {
+    if (task.status === 'running') {
+      return { error: 'task_already_running', status: 409 };
+    }
+    const existing = runningByUser.get(req.user!.id);
+    if (existing) {
+      return {
+        error: 'user_has_running_task',
+        status: 409,
+        extra: { running_task_id: existing.taskId },
+      };
+    }
     const llmKey = String(req.headers['x-llm-key'] || '').trim();
     if (!llmKey) {
-      res.status(400).json({ error: 'missing_llm_key', message: '请在 X-LLM-Key 头中携带 BYOK key' });
-      return;
+      return { error: 'missing_llm_key', status: 400 };
     }
-
-    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    const taskDir = userTaskRoot(projectRoot, req.user!.id, task.id);
     const pdfPath = path.join(taskDir, 'input.pdf');
     if (!fs.existsSync(pdfPath)) {
-      res.status(400).json({ error: 'pdf_missing' });
-      return;
+      return { error: 'pdf_missing', status: 400 };
     }
 
     const pythonBin = process.env.PYTHON_BIN || 'python';
-    const args = [
+    const baseArgs = [
       '-m',
       'dataflow_edu.task_runner',
       '--task-id',
       task.id,
       '--uid',
-      req.user.id,
+      req.user!.id,
       '--task-dir',
       taskDir,
       '--input-pdf',
@@ -153,6 +158,7 @@ export function tasksRoutes(projectRoot: string): Router {
       '--task-name',
       task.name,
     ];
+    const args = baseArgs.concat(extraArgs);
 
     // 把本地 DataFlow/ 放到 PYTHONPATH 最前，避免 site-packages 同名包覆盖 get_logger 等导出
     const dataflowLocal = path.join(projectRoot, 'DataFlow');
@@ -179,38 +185,190 @@ export function tasksRoutes(projectRoot: string): Router {
         PYTHONUTF8: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Windows 下让 child 进入独立进程组，方便后面 taskkill /T /F 杀整棵进程树
+      windowsHide: true,
     });
 
-    runningByUser.set(req.user.id, { taskId: task.id, child, startedAt: Date.now() });
+    runningByUser.set(req.user!.id, { taskId: task.id, child, startedAt: Date.now() });
 
     const logPath = path.join(taskDir, 'runner.log');
     const logStream = fs.createWriteStream(logPath, { flags: 'a' });
-    logStream.write(`\n===== run started at ${new Date().toISOString()} =====\n`);
+    const argsTag = extraArgs.length ? ` args=${extraArgs.join(' ')}` : '';
+    logStream.write(`\n===== run started at ${new Date().toISOString()}${argsTag} =====\n`);
     child.stdout?.pipe(logStream, { end: false });
     child.stderr?.pipe(logStream, { end: false });
 
+    const db = getDb();
     db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?').run(
       'running',
       Date.now(),
       task.id
     );
 
-    const userId = req.user.id;
-    child.on('exit', (code) => {
-      const finalStatus = code === 0 ? 'succeeded' : 'failed';
+    const userId = req.user!.id;
+    const taskId = task.id;
+    child.on('exit', (code, signal) => {
+      const wasStopped = stoppingTasks.delete(taskId);
+      let finalStatus: 'succeeded' | 'failed' | 'cancelled';
+      if (wasStopped) {
+        finalStatus = 'cancelled';
+      } else if (code === 0) {
+        finalStatus = 'succeeded';
+      } else {
+        finalStatus = 'failed';
+      }
       try {
         getDb()
           .prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?')
-          .run(finalStatus, Date.now(), task.id);
+          .run(finalStatus, Date.now(), taskId);
       } catch (err) {
         console.error('[tasks] update final status failed:', err);
       }
       runningByUser.delete(userId);
-      logStream.write(`\n===== run exited code=${code} at ${new Date().toISOString()} =====\n`);
+      logStream.write(
+        `\n===== run exited code=${code} signal=${signal ?? ''} status=${finalStatus} at ${new Date().toISOString()} =====\n`
+      );
       logStream.end();
     });
 
-    res.json({ task_id: task.id, status: 'running' });
+    return { ok: true };
+  }
+
+  function getOwnedTask(req: Request, id: string): TaskRow | undefined {
+    if (!req.user) return undefined;
+    return getDb()
+      .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?')
+      .get(id, req.user.id) as TaskRow | undefined;
+  }
+
+  router.post('/:id/run', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const result = spawnRunner(req, task, []);
+    if ('ok' in result) {
+      res.json({ task_id: task.id, status: 'running' });
+      return;
+    }
+    res.status(result.status).json({ error: result.error, ...(result.extra || {}) });
+  });
+
+  router.post('/:id/restart', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const result = spawnRunner(req, task, ['--reset']);
+    if ('ok' in result) {
+      res.json({ task_id: task.id, status: 'running', mode: 'restart' });
+      return;
+    }
+    res.status(result.status).json({ error: result.error, ...(result.extra || {}) });
+  });
+
+  router.post('/:id/resume', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    const progress = readProgress(taskDir) as
+      | { stages?: Array<{ name: string; status: string }> }
+      | null;
+    if (!progress || !Array.isArray(progress.stages) || progress.stages.length === 0) {
+      res.status(409).json({
+        error: 'no_progress_to_resume',
+        message: '没有历史进度可续跑，请改用「从头重跑」',
+      });
+      return;
+    }
+    const resumable = progress.stages.find(
+      (s) => s.status !== 'succeeded' && s.status !== 'skipped'
+    );
+    if (!resumable) {
+      res
+        .status(409)
+        .json({ error: 'nothing_to_resume', message: '所有阶段都已完成，无需续跑' });
+      return;
+    }
+    const result = spawnRunner(req, task, ['--resume-from', resumable.name]);
+    if ('ok' in result) {
+      res.json({
+        task_id: task.id,
+        status: 'running',
+        mode: 'resume',
+        resume_from: resumable.name,
+      });
+      return;
+    }
+    res.status(result.status).json({ error: result.error, ...(result.extra || {}) });
+  });
+
+  router.post('/:id/stop', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const proc = runningByUser.get(req.user.id);
+    if (!proc || proc.taskId !== task.id) {
+      res.status(409).json({ error: 'task_not_running' });
+      return;
+    }
+
+    stoppingTasks.add(task.id);
+    const child = proc.child;
+    const pid = child.pid;
+
+    try {
+      if (process.platform === 'win32') {
+        // Windows 下 child.kill 等价于 TerminateProcess，但不会杀子进程；
+        // 用 taskkill /T /F 把整棵进程树（含 MinerU 上传线程等）一起干掉。
+        if (pid) {
+          spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+        } else {
+          child.kill();
+        }
+      } else {
+        child.kill('SIGTERM');
+        setTimeout(() => {
+          if (!child.killed) {
+            try {
+              child.kill('SIGKILL');
+            } catch {
+              /* ignore */
+            }
+          }
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('[tasks] stop kill failed:', err);
+      stoppingTasks.delete(task.id);
+      res.status(500).json({ error: 'stop_failed' });
+      return;
+    }
+
+    res.json({ task_id: task.id, status: 'stopping' });
   });
 
   router.get('/', (req: Request, res: Response) => {
@@ -266,6 +424,138 @@ export function tasksRoutes(projectRoot: string): Router {
     });
   });
 
+  router.get('/:id/log', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getDb()
+      .prepare('SELECT * FROM tasks WHERE id = ?')
+      .get(req.params.id) as TaskRow | undefined;
+    if (!task || (task.user_id !== req.user.id && req.user.role !== 'admin')) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+
+    const taskDir = userTaskRoot(projectRoot, task.user_id, task.id);
+    const logPath = path.join(taskDir, 'runner.log');
+    const requested = Number(req.query.offset || 0);
+    let offset = Number.isFinite(requested) && requested >= 0 ? Math.floor(requested) : 0;
+
+    if (!fs.existsSync(logPath)) {
+      res.json({ size: 0, next_offset: 0, lines: [] });
+      return;
+    }
+    let size = 0;
+    try {
+      size = fs.statSync(logPath).size;
+    } catch {
+      res.json({ size: 0, next_offset: 0, lines: [] });
+      return;
+    }
+    // restart/重跑可能截短文件 → 从头再读
+    if (offset > size) offset = 0;
+    if (offset === size) {
+      res.json({ size, next_offset: size, lines: [] });
+      return;
+    }
+
+    let raw = '';
+    try {
+      const fd = fs.openSync(logPath, 'r');
+      try {
+        const len = size - offset;
+        const buf = Buffer.alloc(len);
+        fs.readSync(fd, buf, 0, len, offset);
+        raw = buf.toString('utf-8');
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch (err) {
+      console.error('[tasks] read log failed:', err);
+      res.status(500).json({ error: 'read_log_failed' });
+      return;
+    }
+
+    // 最后一行不完整就保留到下次
+    let consumed = raw.length;
+    let body = raw;
+    const lastNl = raw.lastIndexOf('\n');
+    if (lastNl < 0) {
+      // 整段都没有换行：全留到下次
+      res.json({ size, next_offset: offset, lines: [] });
+      return;
+    }
+    if (lastNl < raw.length - 1) {
+      body = raw.slice(0, lastNl + 1);
+      // consumed 按字节数推进 next_offset
+      consumed = Buffer.byteLength(body, 'utf-8');
+    } else {
+      consumed = Buffer.byteLength(body, 'utf-8');
+    }
+
+    // 去 ANSI 颜色 + 把 tqdm 用的 \r 当行分隔符
+    const ansiRe = /\x1b\[[0-9;]*m/g;
+    const stripped = body.replace(ansiRe, '');
+    const rawLines = stripped.split(/\r\n|\r|\n/);
+
+    // 信号行白名单
+    const reStage = /^=+\s*\[stage (start|ok|FAIL|skip-preserved)\]\s+(.+?)\s*=+\s*$/;
+    const rePdfImg = /^\[pdf->img\] (转换|完成)/;
+    const reMineruPhase = /^\s*\[(1|2|3)\/3\] /;
+    const reUpload = /^\s*✓ \[(\d+)\/(\d+)\] page_/;
+    const reDownload = /^\s*⏳ page_\d+\.png:/;
+    const reTqdm = /^([^:\s][^:]*?):\s*\d+%\|.*?\|\s*(\d+)\/(\d+)/;
+    const reBalanceIter = /^\s*🔄 第 (\d+) 轮迭代/;
+    const reBalanceMax = /^最大迭代:\s*(\d+)/;
+    const TQDM_TITLES = new Set([
+      '阶段1-内容分类',
+      '阶段2-题目生成',
+      '二义性评估',
+      '领域评估',
+      '领域清洗',
+      '去重',
+      '题目合成',
+      '合成',
+      '翻译',
+      '验证',
+      'MCQ验证',
+      '模糊度',
+      '改写',
+      '精炼',
+    ]);
+
+    const out: string[] = [];
+    let lastSig = '';
+    for (const ln of rawLines) {
+      if (!ln) continue;
+      let sig: string | null = null;
+      if (reStage.test(ln)) sig = ln.trim();
+      else if (rePdfImg.test(ln)) sig = ln.trim();
+      else if (reMineruPhase.test(ln)) sig = ln.trim();
+      else if (reUpload.test(ln)) sig = ln.trim();
+      else if (reDownload.test(ln)) sig = ln.trim();
+      else if (reBalanceIter.test(ln)) sig = ln.trim();
+      else if (reBalanceMax.test(ln)) sig = ln.trim();
+      else {
+        const m = reTqdm.exec(ln);
+        if (m) {
+          const title = m[1].trim();
+          if (TQDM_TITLES.has(title)) {
+            // 标准化 tqdm 行：只保留标题 + i/N，其余进度条字符忽略
+            sig = `${title}: ${m[2]}/${m[3]}`;
+          }
+        }
+      }
+      if (!sig) continue;
+      if (sig === lastSig) continue;
+      lastSig = sig;
+      out.push(sig);
+    }
+
+    res.json({ size, next_offset: offset + consumed, lines: out });
+  });
+
   router.get('/:id/events', (req: Request, res: Response) => {
     if (!req.user) {
       res.status(401).json({ error: 'unauthorized' });
@@ -317,7 +607,12 @@ export function tasksRoutes(projectRoot: string): Router {
       const fresh = getDb()
         .prepare('SELECT status FROM tasks WHERE id = ?')
         .get(task.id) as { status: string } | undefined;
-      if (fresh && (fresh.status === 'succeeded' || fresh.status === 'failed')) {
+      if (
+        fresh &&
+        (fresh.status === 'succeeded' ||
+          fresh.status === 'failed' ||
+          fresh.status === 'cancelled')
+      ) {
         send('done', { task_id: task.id, status: fresh.status, progress: readProgress(taskDir) });
         cleanup();
       }

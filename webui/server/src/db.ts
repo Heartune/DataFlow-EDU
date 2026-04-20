@@ -21,7 +21,7 @@ export interface TaskRow {
   id: string;
   user_id: string;
   name: string;
-  status: 'created' | 'running' | 'succeeded' | 'failed';
+  status: 'created' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   current_stage: string | null;
   created_at: number;
   updated_at: number;

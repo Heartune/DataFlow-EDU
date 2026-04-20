@@ -5,7 +5,7 @@ import { api } from '@/api/client';
 interface Task {
   id: string;
   name: string;
-  status: 'created' | 'running' | 'succeeded' | 'failed';
+  status: 'created' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   current_stage: string | null;
   created_at: number;
   updated_at: number;
@@ -14,6 +14,8 @@ interface Task {
 const tasks = ref<Task[]>([]);
 const loading = ref(false);
 const error = ref('');
+const actionMsg = ref('');
+const actionBusy = ref<Record<string, boolean>>({});
 
 async function load() {
   loading.value = true;
@@ -37,6 +39,7 @@ const statusLabel: Record<Task['status'], string> = {
   running: '运行中',
   succeeded: '已完成',
   failed: '失败',
+  cancelled: '已取消',
 };
 
 const statusClass: Record<Task['status'], string> = {
@@ -44,7 +47,36 @@ const statusClass: Record<Task['status'], string> = {
   running: 'bg-amber-100 text-amber-700',
   succeeded: 'bg-emerald-100 text-emerald-700',
   failed: 'bg-rose-100 text-rose-700',
+  cancelled: 'bg-slate-200 text-slate-600',
 };
+
+const errorLabel: Record<string, string> = {
+  no_progress_to_resume: '没有历史进度可续跑，请改用「从头重跑」',
+  nothing_to_resume: '所有阶段都已完成，无需续跑',
+  user_has_running_task: '你已有任务在跑，等它结束后再启动新任务',
+  task_already_running: '任务已在运行中',
+  missing_llm_key: '缺少 LLM Key，请先在「新建任务」页填一次以保存到本地',
+  pdf_missing: '原始 PDF 已丢失，无法继续',
+};
+
+async function resumeTask(t: Task) {
+  if (actionBusy.value[t.id]) return;
+  actionBusy.value = { ...actionBusy.value, [t.id]: true };
+  actionMsg.value = '';
+  try {
+    await api.post(`/tasks/${t.id}/resume`);
+    await load();
+  } catch (err: any) {
+    const code = err?.response?.data?.error;
+    actionMsg.value = errorLabel[code] || err?.response?.data?.message || err?.message || '续跑失败';
+  } finally {
+    actionBusy.value = { ...actionBusy.value, [t.id]: false };
+  }
+}
+
+function canResume(t: Task) {
+  return t.status === 'failed' || t.status === 'cancelled' || t.status === 'succeeded';
+}
 
 onMounted(load);
 </script>
@@ -71,6 +103,8 @@ onMounted(load);
         </router-link>
       </div>
     </div>
+
+    <p v-if="actionMsg" class="text-sm text-rose-600 mb-3">{{ actionMsg }}</p>
 
     <div v-if="loading" class="text-slate-500 py-12 text-center">加载中...</div>
     <div v-else-if="error" class="text-rose-600 py-12 text-center">{{ error }}</div>
@@ -107,7 +141,15 @@ onMounted(load);
             <td class="px-4 py-3 text-slate-600">{{ t.current_stage || '—' }}</td>
             <td class="px-4 py-3 text-slate-500">{{ fmtDate(t.created_at) }}</td>
             <td class="px-4 py-3 text-slate-500">{{ fmtDate(t.updated_at) }}</td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              <button
+                v-if="canResume(t)"
+                class="text-slate-700 hover:text-slate-900 underline mr-3 disabled:opacity-50"
+                :disabled="!!actionBusy[t.id]"
+                @click="resumeTask(t)"
+              >
+                {{ actionBusy[t.id] ? '续跑中...' : '续跑' }}
+              </button>
               <router-link
                 :to="`/teacher/tasks/${t.id}`"
                 class="text-slate-700 hover:text-slate-900 underline"
