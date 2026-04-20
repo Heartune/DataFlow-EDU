@@ -54,9 +54,10 @@ coverage.xml
 *.egg-info/
 *.egg
 build/
-dist/
 .eggs/
 pip-wheel-metadata/
+# 注意：不全局忽略 dist/，前端发布产物 webui/frontend/dist/ 是有意追踪的；
+# Python 打包 dist/ 走 build/ + .eggs/ 已覆盖，需要时再手工添加路径。
 
 # ===== 虚拟环境 =====
 .venv/
