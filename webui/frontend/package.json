@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "ag-grid-community": "^35.2.1",
+    "ag-grid-vue3": "^35.2.1",
     "axios": "^1.15.0",
     "chart.js": "^4.4.6",
     "pinia": "^2.2.6",
