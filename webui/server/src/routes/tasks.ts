@@ -37,6 +37,106 @@ function readProgress(taskDir: string): unknown {
   }
 }
 
+// 与 task_runner.ProgressTracker._now_iso 同格式（YYYY-MM-DDTHH:mm:ss，无毫秒/时区）
+function nowIsoForProgress(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
+}
+
+/**
+ * 把孤儿 progress.json 改写为终态：
+ *   - 顶层 status: running → finalStatus
+ *   - stages 中 status==='running' 的全部改为 finalStatus
+ *   - 写入 error 字段方便用户看到原因
+ * 仅在文件存在时操作。读写失败仅记日志，不抛异常。
+ */
+function markOrphanedProgress(
+  taskDir: string,
+  finalStatus: 'failed' | 'cancelled',
+  errMsg: string
+): void {
+  const p = path.join(taskDir, 'progress.json');
+  if (!fs.existsSync(p)) return;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch {
+    return;
+  }
+  if (!raw || typeof raw !== 'object') return;
+  const obj = raw as Record<string, unknown> & {
+    status?: string;
+    error?: string | null;
+    finished_at?: string | null;
+    stages?: Array<Record<string, unknown> & { status?: string }>;
+  };
+  const ts = nowIsoForProgress();
+  let touched = false;
+  if (Array.isArray(obj.stages)) {
+    for (const s of obj.stages) {
+      if (s && s.status === 'running') {
+        s.status = finalStatus;
+        (s as Record<string, unknown>).finished_at = ts;
+        (s as Record<string, unknown>).error = errMsg;
+        touched = true;
+      }
+    }
+  }
+  if (obj.status === 'running') {
+    obj.status = finalStatus;
+    obj.error = errMsg;
+    obj.finished_at = ts;
+    touched = true;
+  }
+  if (!touched) return;
+  try {
+    fs.writeFileSync(p, JSON.stringify(obj, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[tasks] markOrphanedProgress write failed:', err);
+  }
+}
+
+/**
+ * 服务端启动时的孤儿任务回收：
+ *
+ * `runningByUser` 是进程内内存表，`tsx watch` 重启 / 进程崩溃后会丢失。
+ * 此时 DB 里仍可能有 status='running' 的任务，并且其 child Python 进程
+ * 因为 stdio 管道断开多半已经死掉（即便没死也无法被新进程 kill）。
+ * 我们在 server 启动时把它们一律判为 failed，并同步改写 progress.json，
+ * 让 UI 能立即看到失败原因，避免用户被永久"假运行中"卡住。
+ */
+export function reconcileOrphanedRunningTasks(projectRoot: string): void {
+  let rows: TaskRow[] = [];
+  try {
+    rows = getDb()
+      .prepare("SELECT * FROM tasks WHERE status = 'running'")
+      .all() as TaskRow[];
+  } catch (err) {
+    console.error('[tasks] reconcileOrphanedRunningTasks query failed:', err);
+    return;
+  }
+  if (!rows.length) return;
+  const now = Date.now();
+  const errMsg = '服务端在该任务运行期间重启，子进程已丢失。请使用「续跑」从断点继续，或「从头重跑」。';
+  for (const r of rows) {
+    try {
+      getDb()
+        .prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?')
+        .run('failed', now, r.id);
+    } catch (err) {
+      console.error(`[tasks] reconcile DB update failed for ${r.id}:`, err);
+      continue;
+    }
+    const taskDir = userTaskRoot(projectRoot, r.user_id, r.id);
+    markOrphanedProgress(taskDir, 'failed', errMsg);
+  }
+  console.log(`[tasks] reconciled ${rows.length} orphan running task(s) on startup`);
+}
+
 export function tasksRoutes(projectRoot: string): Router {
   const router = Router();
 
@@ -123,7 +223,28 @@ export function tasksRoutes(projectRoot: string): Router {
     extraArgs: string[]
   ): SpawnFailure | { ok: true } {
     if (task.status === 'running') {
-      return { error: 'task_already_running', status: 409 };
+      // 兜底回收孤儿：DB 显示 running 但内存里没有对应 child（多半是上次 server 重启遗留）。
+      // 此时直接标记为 failed 再继续 spawn，避免用户被永久挡住。
+      const inMem = runningByUser.get(req.user!.id);
+      if (!inMem || inMem.taskId !== task.id) {
+        const now = Date.now();
+        try {
+          getDb()
+            .prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?')
+            .run('failed', now, task.id);
+        } catch (err) {
+          console.error('[tasks] orphan recovery in spawnRunner failed:', err);
+          return { error: 'task_already_running', status: 409 };
+        }
+        const taskDir = userTaskRoot(projectRoot, req.user!.id, task.id);
+        markOrphanedProgress(
+          taskDir,
+          'failed',
+          '检测到孤儿任务（服务端重启），已自动判为失败，准备重新启动'
+        );
+      } else {
+        return { error: 'task_already_running', status: 409 };
+      }
     }
     const existing = runningByUser.get(req.user!.id);
     if (existing) {
@@ -332,6 +453,29 @@ export function tasksRoutes(projectRoot: string): Router {
     }
     const proc = runningByUser.get(req.user.id);
     if (!proc || proc.taskId !== task.id) {
+      // 孤儿任务恢复：DB 还显示 running 但内存里没有 child
+      // （上次 server 重启时进程被丢失，对应 Python 多半也已死）。
+      // 此时也允许"停止"——直接落库为 cancelled，让 UI 解卡。
+      if (task.status === 'running') {
+        const now = Date.now();
+        try {
+          getDb()
+            .prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?')
+            .run('cancelled', now, task.id);
+        } catch (err) {
+          console.error('[tasks] stop orphan DB update failed:', err);
+          res.status(500).json({ error: 'stop_failed' });
+          return;
+        }
+        const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+        markOrphanedProgress(
+          taskDir,
+          'cancelled',
+          '任务孤儿化（服务端重启），已强制标记为已取消'
+        );
+        res.json({ task_id: task.id, status: 'cancelled', mode: 'orphan_recovered' });
+        return;
+      }
       res.status(409).json({ error: 'task_not_running' });
       return;
     }

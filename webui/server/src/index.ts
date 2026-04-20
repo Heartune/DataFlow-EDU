@@ -7,7 +7,7 @@ import { dataRoutes } from './routes/data.js';
 import { configRoutes } from './routes/config.js';
 import { pipelineRoutes } from './routes/pipeline.js';
 import { authRoutes } from './routes/auth.js';
-import { tasksRoutes } from './routes/tasks.js';
+import { tasksRoutes, reconcileOrphanedRunningTasks } from './routes/tasks.js';
 import { requireAuth } from './middleware/auth.js';
 import { getDb } from './db.js';
 
@@ -16,6 +16,10 @@ const projectRoot = path.resolve(__dirname, '../../..');
 
 // 初始化 SQLite + admin seed
 getDb();
+// 回收上次进程残留的"running"任务（tsx watch 重启 / crash 等场景），
+// 否则其 DB 状态会永远卡在 running，对应内存里又没有 child，
+// 用户既无法停止也无法重跑。
+reconcileOrphanedRunningTasks(projectRoot);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
