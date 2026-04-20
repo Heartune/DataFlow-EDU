@@ -18,9 +18,12 @@ from dataflow_edu.config.schema import (
     ExecuteConfig,
     GenerationConfig,
     JudgeConfig,
+    MCQVerifyConfig,
     MinerUOCRConfig,
     QuestionType,
+    SynthesisConfig,
     TaxonomyItem,
+    TranslationConfig,
     default_config,
 )
 
@@ -116,6 +119,34 @@ def _config_to_dict(config: EduConfig) -> dict:
                 "threshold": config.operators.get("deduplication", DeduplicationConfig()).threshold,
                 "num_perm": config.operators.get("deduplication", DeduplicationConfig()).num_perm,
                 "n_gram": config.operators.get("deduplication", DeduplicationConfig()).n_gram,
+            },
+            "synthesis": {
+                "input_dir": config.operators.get("synthesis", SynthesisConfig()).input_dir,
+                "output_dir": config.operators.get("synthesis", SynthesisConfig()).output_dir,
+                "max_workers": config.operators.get("synthesis", SynthesisConfig()).max_workers,
+                "max_retries": config.operators.get("synthesis", SynthesisConfig()).max_retries,
+                "max_tokens": config.operators.get("synthesis", SynthesisConfig()).max_tokens,
+                "temperature": config.operators.get("synthesis", SynthesisConfig()).temperature,
+                "skip_existing": config.operators.get("synthesis", SynthesisConfig()).skip_existing,
+            },
+            "translation": {
+                "input_dir": config.operators.get("translation", TranslationConfig()).input_dir,
+                "output_dir": config.operators.get("translation", TranslationConfig()).output_dir,
+                "target_languages": config.operators.get("translation", TranslationConfig()).target_languages,
+                "translate_fields": config.operators.get("translation", TranslationConfig()).translate_fields,
+                "max_workers": config.operators.get("translation", TranslationConfig()).max_workers,
+                "max_retries": config.operators.get("translation", TranslationConfig()).max_retries,
+                "residual_pattern_zh": config.operators.get("translation", TranslationConfig()).residual_pattern_zh,
+                "fix_french_option_letter": config.operators.get("translation", TranslationConfig()).fix_french_option_letter,
+            },
+            "mcq_verify": {
+                "input_dir": config.operators.get("mcq_verify", MCQVerifyConfig()).input_dir,
+                "output_dir": config.operators.get("mcq_verify", MCQVerifyConfig()).output_dir,
+                "target_languages": config.operators.get("mcq_verify", MCQVerifyConfig()).target_languages,
+                "max_workers": config.operators.get("mcq_verify", MCQVerifyConfig()).max_workers,
+                "max_retries": config.operators.get("mcq_verify", MCQVerifyConfig()).max_retries,
+                "max_tokens": config.operators.get("mcq_verify", MCQVerifyConfig()).max_tokens,
+                "temperature": config.operators.get("mcq_verify", MCQVerifyConfig()).temperature,
             },
             "execute": {
                 "input_dir": config.operators.get("execute", ExecuteConfig()).input_dir,
@@ -276,6 +307,62 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
         n_gram=int(dedup_op.get("n_gram", dedup_defaults.n_gram)),
     )
 
+    synth_defaults = SynthesisConfig()
+    synth_op = d.get("operators", {}) or {}
+    synth_op = synth_op.get("synthesis")
+    if not isinstance(synth_op, dict):
+        synth_op = {}
+    synth = SynthesisConfig(
+        input_dir=str(synth_op.get("input_dir", synth_defaults.input_dir)),
+        output_dir=str(synth_op.get("output_dir", synth_defaults.output_dir)),
+        max_workers=int(synth_op.get("max_workers", synth_defaults.max_workers)),
+        max_retries=int(synth_op.get("max_retries", synth_defaults.max_retries)),
+        max_tokens=int(synth_op.get("max_tokens", synth_defaults.max_tokens)),
+        temperature=float(synth_op.get("temperature", synth_defaults.temperature)),
+        skip_existing=bool(synth_op.get("skip_existing", synth_defaults.skip_existing)),
+    )
+
+    trans_defaults = TranslationConfig()
+    trans_op = d.get("operators", {}) or {}
+    trans_op = trans_op.get("translation")
+    if not isinstance(trans_op, dict):
+        trans_op = {}
+    raw_target_langs = trans_op.get("target_languages", trans_defaults.target_languages)
+    target_langs = [str(x) for x in raw_target_langs] if isinstance(raw_target_langs, (list, tuple)) else list(trans_defaults.target_languages)
+    raw_trans_fields = trans_op.get("translate_fields", trans_defaults.translate_fields)
+    trans_fields = [str(x) for x in raw_trans_fields] if isinstance(raw_trans_fields, (list, tuple)) else list(trans_defaults.translate_fields)
+    trans = TranslationConfig(
+        input_dir=str(trans_op.get("input_dir", trans_defaults.input_dir)),
+        output_dir=str(trans_op.get("output_dir", trans_defaults.output_dir)),
+        target_languages=target_langs,
+        translate_fields=trans_fields,
+        max_workers=int(trans_op.get("max_workers", trans_defaults.max_workers)),
+        max_retries=int(trans_op.get("max_retries", trans_defaults.max_retries)),
+        residual_pattern_zh=bool(trans_op.get("residual_pattern_zh", trans_defaults.residual_pattern_zh)),
+        fix_french_option_letter=bool(trans_op.get("fix_french_option_letter", trans_defaults.fix_french_option_letter)),
+    )
+
+    mcq_defaults = MCQVerifyConfig()
+    mcq_op = d.get("operators", {}) or {}
+    mcq_op = mcq_op.get("mcq_verify")
+    if not isinstance(mcq_op, dict):
+        mcq_op = {}
+    raw_mcq_langs = mcq_op.get("target_languages", mcq_defaults.target_languages)
+    mcq_langs = (
+        [str(x) for x in raw_mcq_langs]
+        if isinstance(raw_mcq_langs, (list, tuple))
+        else list(mcq_defaults.target_languages)
+    )
+    mcq_cfg = MCQVerifyConfig(
+        input_dir=str(mcq_op.get("input_dir", mcq_defaults.input_dir)),
+        output_dir=str(mcq_op.get("output_dir", mcq_defaults.output_dir)),
+        target_languages=mcq_langs,
+        max_workers=int(mcq_op.get("max_workers", mcq_defaults.max_workers)),
+        max_retries=int(mcq_op.get("max_retries", mcq_defaults.max_retries)),
+        max_tokens=int(mcq_op.get("max_tokens", mcq_defaults.max_tokens)),
+        temperature=float(mcq_op.get("temperature", mcq_defaults.temperature)),
+    )
+
     exec_defaults = ExecuteConfig()
     exec_op = d.get("operators", {}) or {}
     exec_op = exec_op.get("execute")
@@ -309,6 +396,9 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
             "domain_cleaning": dom,
             "domain_refinement": domref,
             "deduplication": dedup,
+            "synthesis": synth,
+            "translation": trans,
+            "mcq_verify": mcq_cfg,
             "execute": exec_cfg,
             "judge": judge_cfg,
         },

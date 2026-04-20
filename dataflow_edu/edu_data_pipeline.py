@@ -31,7 +31,10 @@ from dataflow_edu.operators import (  # noqa: E402
     DomainRefinementOperator,
     ExecuteOperator,
     JudgeOperator,
+    MCQVerifyOperator,
     MinerUOCROperator,
+    SynthesisOperator,
+    TranslationOperator,
 )
 from dataflow_edu.pipelines import GenerationPipeline  # noqa: E402
 
@@ -223,6 +226,81 @@ def run_deduplication():
     op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
 
 
+def run_synthesis():
+    """阶段三 3.6：Synthesis Operator - 基于 question + answer 生成 explanation 字段"""
+    config = load_config(project_root=_PROJECT_ROOT)
+    path = get_config_path(_PROJECT_ROOT)
+    if not os.path.isfile(path):
+        print("⚠ 配置文件不存在，使用内置 3.6 参数。")
+        config = default_config()
+
+    synth = config.operators.get("synthesis") or default_config().operators.get("synthesis")
+    if synth is None:
+        from dataflow_edu.config.schema import SynthesisConfig
+
+        synth = SynthesisConfig()
+    input_dir = synth.input_dir if os.path.isabs(synth.input_dir) else os.path.join(_PROJECT_ROOT, synth.input_dir)
+    output_dir = synth.output_dir if os.path.isabs(synth.output_dir) else os.path.join(_PROJECT_ROOT, synth.output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    op = SynthesisOperator(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        max_workers=getattr(synth, "max_workers", 8),
+    )
+    op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
+
+
+def run_translation():
+    """阶段三 3.7：Translation Operator - 默认中→英/法翻译，支持残留中文重翻"""
+    config = load_config(project_root=_PROJECT_ROOT)
+    path = get_config_path(_PROJECT_ROOT)
+    if not os.path.isfile(path):
+        print("⚠ 配置文件不存在，使用内置 3.7 参数。")
+        config = default_config()
+
+    trans = config.operators.get("translation") or default_config().operators.get("translation")
+    if trans is None:
+        from dataflow_edu.config.schema import TranslationConfig
+
+        trans = TranslationConfig()
+    input_dir = trans.input_dir if os.path.isabs(trans.input_dir) else os.path.join(_PROJECT_ROOT, trans.input_dir)
+    output_dir = trans.output_dir if os.path.isabs(trans.output_dir) else os.path.join(_PROJECT_ROOT, trans.output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    op = TranslationOperator(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        max_workers=getattr(trans, "max_workers", 8),
+    )
+    op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
+
+
+def run_mcq_verify():
+    """阶段三 3.8：MCQ Verify Operator - 选择题结构校验 + LLM 修复"""
+    config = load_config(project_root=_PROJECT_ROOT)
+    path = get_config_path(_PROJECT_ROOT)
+    if not os.path.isfile(path):
+        print("⚠ 配置文件不存在，使用内置 3.8 参数。")
+        config = default_config()
+
+    mcq = config.operators.get("mcq_verify") or default_config().operators.get("mcq_verify")
+    if mcq is None:
+        from dataflow_edu.config.schema import MCQVerifyConfig
+
+        mcq = MCQVerifyConfig()
+    input_dir = mcq.input_dir if os.path.isabs(mcq.input_dir) else os.path.join(_PROJECT_ROOT, mcq.input_dir)
+    output_dir = mcq.output_dir if os.path.isabs(mcq.output_dir) else os.path.join(_PROJECT_ROOT, mcq.output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    op = MCQVerifyOperator(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        max_workers=getattr(mcq, "max_workers", 8),
+    )
+    op.run(storage=None, input_dir=input_dir, output_dir=output_dir, config=config)
+
+
 def run_execute():
     """阶段四 4.1：Execute Operator - 将待测大模型接入作答并记录答案"""
     config = load_config(project_root=_PROJECT_ROOT)
@@ -313,9 +391,9 @@ def main():
         "3.3": run_domain_cleaning,
         "3.4": run_domain_refinement,
         "3.5": run_deduplication,
-        "3.6": lambda: _stub("3.6 Synthesis"),
-        "3.7": lambda: _stub("3.7 Translation"),
-        "3.8": lambda: _stub("3.8 MCQ Verify"),
+        "3.6": run_synthesis,
+        "3.7": run_translation,
+        "3.8": run_mcq_verify,
         "4.1": run_execute,
         "4.2": run_judge,
     }

@@ -133,6 +133,48 @@ class DeduplicationConfig:
 
 
 @dataclass
+class SynthesisConfig:
+    """3.6 Synthesis Operator 参数：基于 question + answer 生成 explanation 字段。"""
+
+    input_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated"
+    output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_6_synthesized"
+    max_workers: int = 8
+    max_retries: int = 3
+    max_tokens: int = 2000
+    temperature: float = 0.3
+    skip_existing: bool = True  # 默认跳过已有 explanation 的题目
+
+
+@dataclass
+class TranslationConfig:
+    """3.7 Translation Operator 参数：默认翻译 question/answer/explanation/options 到英、法。"""
+
+    input_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_6_synthesized"
+    output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_7_translated"
+    target_languages: List[str] = field(default_factory=lambda: ["en", "fr"])
+    translate_fields: List[str] = field(
+        default_factory=lambda: ["question", "answer", "output", "explanation", "options"]
+    )
+    max_workers: int = 8
+    max_retries: int = 3
+    residual_pattern_zh: bool = True  # 任意中文字符 [\u4e00-\u9fff] 即视为残留
+    fix_french_option_letter: bool = True  # 法语翻译完成后做 bé/bê → B 修复
+
+
+@dataclass
+class MCQVerifyConfig:
+    """3.8 MCQ Verify Operator 参数：选择题结构校验 + LLM 修复（补选项/规范答案字母）。"""
+
+    input_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_7_translated"
+    output_dir: str = "dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified"
+    target_languages: List[str] = field(default_factory=lambda: ["zh", "en", "fr"])
+    max_workers: int = 8
+    max_retries: int = 3
+    max_tokens: int = 2000
+    temperature: float = 0.3
+
+
+@dataclass
 class ExecuteConfig:
     """4.1 Execute Operator 参数。"""
 
@@ -206,6 +248,9 @@ def default_config() -> EduConfig:
             "domain_cleaning": DomainCleaningConfig(),
             "domain_refinement": DomainRefinementConfig(),
             "deduplication": DeduplicationConfig(),
+            "synthesis": SynthesisConfig(),
+            "translation": TranslationConfig(),
+            "mcq_verify": MCQVerifyConfig(),
             "execute": ExecuteConfig(),
             "judge": JudgeConfig(),
         },

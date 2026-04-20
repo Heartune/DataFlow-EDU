@@ -84,6 +84,14 @@ LLM_PROVIDERS = {
         "default_delay": 0.3,
         "default_timeout": 120,
     },
+    "zgca": {
+        "name": "ZGCA",
+        "base_url": "http://35.220.164.252:3888/v1",
+        "default_api_key": _env("LLM_ZGCA_API_KEY"),
+        "default_concurrent": 32,
+        "default_delay": 0.3,
+        "default_timeout": 120,
+    },
     "gptagent": {
         "name": "GPT-Agent.cc",
         "base_url": "https://gpt-agent.cc/v1",

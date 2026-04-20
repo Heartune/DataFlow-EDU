@@ -11,7 +11,10 @@ from dataflow_edu.operators.judge_operator import JudgeOperator
 from dataflow_edu.operators.domain_cleaning_operator import DomainCleaningOperator
 from dataflow_edu.operators.domain_refinement_operator import DomainRefinementOperator
 from dataflow_edu.operators.generation_operator import GenerationOperator
+from dataflow_edu.operators.mcq_verify_operator import MCQVerifyOperator
 from dataflow_edu.operators.mineru_ocr_operator import MinerUOCROperator
+from dataflow_edu.operators.synthesis_operator import SynthesisOperator
+from dataflow_edu.operators.translation_operator import TranslationOperator
 
 __all__ = [
     "AmbiguityCleaningOperator",
@@ -23,5 +26,8 @@ __all__ = [
     "DomainCleaningOperator",
     "DomainRefinementOperator",
     "GenerationOperator",
+    "MCQVerifyOperator",
     "MinerUOCROperator",
+    "SynthesisOperator",
+    "TranslationOperator",
 ]

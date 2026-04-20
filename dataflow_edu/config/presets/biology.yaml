@@ -142,6 +142,41 @@ operators:
     threshold: 0.9
     num_perm: 128
     n_gram: 5
+  synthesis:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+    skip_existing: true
+  translation:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    target_languages:
+    - en
+    - fr
+    translate_fields:
+    - question
+    - answer
+    - output
+    - explanation
+    - options
+    max_workers: 8
+    max_retries: 3
+    residual_pattern_zh: true
+    fix_french_option_letter: true
+  mcq_verify:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified
+    target_languages:
+    - zh
+    - en
+    - fr
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
   execute:
     input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
     output_dir: dataflow_edu/data/execute_and_judge/4_1_executed
