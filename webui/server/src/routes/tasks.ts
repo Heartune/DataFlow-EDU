@@ -5,7 +5,23 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { spawn, type ChildProcess } from 'child_process';
 import chokidar from 'chokidar';
+import yaml from 'js-yaml';
+import archiver from 'archiver';
 import { getDb, todayKey, type TaskRow } from '../db.js';
+
+// EditView 允许编辑的 stage 白名单（防止越权访问其它路径）
+const EDITABLE_STAGES = new Set(['3_4_domain_refined', '3_7_translated', '3_8_mcq_verified']);
+
+// sample-question 抽样按以下顺序找最后一个非空 stage（越靠前越优先）
+const SAMPLE_STAGE_ORDER = [
+  '3_8_mcq_verified',
+  '3_7_translated',
+  '3_6_synthesized',
+  '3_5_deduplicated',
+  '3_4_domain_refined',
+  '3_2_ambiguity_refined',
+  '2_1_generation/2_2_balanced',
+];
 
 interface RunningProc {
   taskId: string;
@@ -135,6 +151,124 @@ export function reconcileOrphanedRunningTasks(projectRoot: string): void {
     markOrphanedProgress(taskDir, 'failed', errMsg);
   }
   console.log(`[tasks] reconciled ${rows.length} orphan running task(s) on startup`);
+}
+
+function shortId(input: string): string {
+  return crypto.createHash('sha1').update(input, 'utf-8').digest('hex').slice(0, 12);
+}
+
+function listStageFiles(taskDir: string, stage: string): string[] {
+  const dir = path.join(taskDir, stage.replace(/\//g, path.sep));
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.toLowerCase().endsWith('.json'))
+    .filter((f) => !f.endsWith('.bak'))
+    .filter((f) => !/_progress\.json$/i.test(f))
+    .sort();
+}
+
+function resolveStageFile(taskDir: string, stage: string, file: string): string | null {
+  if (!EDITABLE_STAGES.has(stage)) return null;
+  if (!file || /[\\/]/.test(file) || file.includes('..')) return null;
+  if (!file.toLowerCase().endsWith('.json')) return null;
+  const stageDir = path.resolve(taskDir, stage.replace(/\//g, path.sep));
+  const full = path.resolve(stageDir, file);
+  if (!full.startsWith(stageDir + path.sep) && full !== stageDir) return null;
+  if (!fs.existsSync(full)) return null;
+  return full;
+}
+
+function readJsonSafe(p: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function extractQuestions(parsed: unknown): { questions: Array<Record<string, unknown>>; container: 'questions' | 'array' | 'unknown' } {
+  if (Array.isArray(parsed)) {
+    return { questions: parsed as Array<Record<string, unknown>>, container: 'array' };
+  }
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+    if (Array.isArray(obj.questions)) {
+      return { questions: obj.questions as Array<Record<string, unknown>>, container: 'questions' };
+    }
+  }
+  return { questions: [], container: 'unknown' };
+}
+
+function attachIds(items: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return items.map((it) => {
+    const q = String(it.question ?? '');
+    const a = String(it.answer ?? '');
+    return { ...it, _id: shortId(q + '\n' + a) };
+  });
+}
+
+// 原子写：写到 .tmp 后 rename，失败时清理
+function atomicWriteJson(target: string, data: unknown): void {
+  const tmp = target + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  fs.renameSync(tmp, target);
+}
+
+// 单层 .bak 备份；首次还额外保留 .original.bak
+function backupBeforeWrite(filePath: string): void {
+  const bak = filePath + '.bak';
+  const original = filePath + '.original.bak';
+  try {
+    if (fs.existsSync(filePath)) {
+      if (!fs.existsSync(original)) {
+        fs.copyFileSync(filePath, original);
+      }
+      fs.copyFileSync(filePath, bak);
+    }
+  } catch (err) {
+    console.error('[tasks] backupBeforeWrite failed:', err);
+  }
+}
+
+function loadPresetYaml(projectRoot: string, presetName: string): Record<string, unknown> | null {
+  if (!presetName || /[.\\/]/.test(presetName)) return null;
+  const presetsDir = path.join(projectRoot, 'dataflow_edu', 'config', 'presets');
+  for (const ext of ['.yaml', '.yml']) {
+    const p = path.join(presetsDir, `${presetName}${ext}`);
+    if (fs.existsSync(p)) {
+      try {
+        const parsed = yaml.load(fs.readFileSync(p, 'utf-8'));
+        if (parsed && typeof parsed === 'object') {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+interface WizardOverrides {
+  taxonomy?: unknown;
+  ability_levels?: unknown;
+  question_types?: unknown;
+  difficulty_distribution?: unknown;
+}
+
+function buildTaskConfigYaml(
+  preset: Record<string, unknown> | null,
+  overrides: WizardOverrides
+): string {
+  const merged: Record<string, unknown> = preset ? { ...preset } : {};
+  if (overrides.taxonomy !== undefined) merged.taxonomy = overrides.taxonomy;
+  if (overrides.ability_levels !== undefined) merged.ability_levels = overrides.ability_levels;
+  if (overrides.question_types !== undefined) merged.question_types = overrides.question_types;
+  if (overrides.difficulty_distribution !== undefined) {
+    merged.difficulty_distribution = overrides.difficulty_distribution;
+  }
+  return yaml.dump(merged, { lineWidth: 120, noRefs: true, sortKeys: false });
 }
 
 export function tasksRoutes(projectRoot: string): Router {
@@ -773,6 +907,330 @@ export function tasksRoutes(projectRoot: string): Router {
 
     req.on('close', cleanup);
     req.on('aborted', cleanup);
+  });
+
+  // ---------------------------------------------------------------
+  // Wizard 配置：写入 task_dir/config.yaml；task_runner 优先读取
+  // ---------------------------------------------------------------
+  router.get('/:id/config', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    const cfgPath = path.join(taskDir, 'config.yaml');
+    if (!fs.existsSync(cfgPath)) {
+      res.json({ exists: false, config: null });
+      return;
+    }
+    try {
+      const raw = fs.readFileSync(cfgPath, 'utf-8');
+      const parsed = yaml.load(raw);
+      res.json({ exists: true, config: parsed });
+    } catch (err) {
+      console.error('[tasks] read task config failed:', err);
+      res.status(500).json({ error: 'read_config_failed' });
+    }
+  });
+
+  router.post('/:id/config', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    if (task.status === 'running') {
+      res.status(409).json({ error: 'task_already_running' });
+      return;
+    }
+    const body = (req.body || {}) as {
+      preset?: string;
+      overrides?: WizardOverrides;
+    };
+    const presetName = String(body.preset || '').trim();
+    let preset: Record<string, unknown> | null = null;
+    if (presetName) {
+      preset = loadPresetYaml(projectRoot, presetName);
+      if (!preset) {
+        res.status(400).json({ error: 'invalid_preset' });
+        return;
+      }
+    }
+    const overrides: WizardOverrides = body.overrides || {};
+    const yamlText = buildTaskConfigYaml(preset, overrides);
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    ensureDir(taskDir);
+    const cfgPath = path.join(taskDir, 'config.yaml');
+    try {
+      fs.writeFileSync(cfgPath, yamlText, 'utf-8');
+    } catch (err) {
+      console.error('[tasks] write task config failed:', err);
+      res.status(500).json({ error: 'write_config_failed' });
+      return;
+    }
+    res.json({ ok: true, preset: presetName || null });
+  });
+
+  // ---------------------------------------------------------------
+  // 抽样：进度页"最新一题预览"
+  // ---------------------------------------------------------------
+  router.get('/:id/sample-question', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getDb()
+      .prepare('SELECT * FROM tasks WHERE id = ?')
+      .get(req.params.id) as TaskRow | undefined;
+    if (!task || (task.user_id !== req.user.id && req.user.role !== 'admin')) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const taskDir = userTaskRoot(projectRoot, task.user_id, task.id);
+    for (const stage of SAMPLE_STAGE_ORDER) {
+      const files = listStageFiles(taskDir, stage);
+      for (const f of files) {
+        const full = path.join(taskDir, stage.replace(/\//g, path.sep), f);
+        const parsed = readJsonSafe(full);
+        const { questions } = extractQuestions(parsed);
+        if (questions.length === 0) continue;
+        const sample = questions[Math.floor(Math.random() * questions.length)];
+        res.json({ stage, file: f, sample });
+        return;
+      }
+    }
+    res.status(204).end();
+  });
+
+  // ---------------------------------------------------------------
+  // EditView 列文件
+  // ---------------------------------------------------------------
+  router.get('/:id/files', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const stage = String(req.query.stage || '').trim();
+    if (!EDITABLE_STAGES.has(stage)) {
+      res.status(400).json({ error: 'invalid_stage' });
+      return;
+    }
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    const files = listStageFiles(taskDir, stage);
+    res.json({ stage, files });
+  });
+
+  // 列题（带 sha1 id）
+  router.get('/:id/items', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const stage = String(req.query.stage || '').trim();
+    const file = String(req.query.file || '').trim();
+    const offset = Math.max(0, Number(req.query.offset || 0));
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit || 50)));
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    const target = resolveStageFile(taskDir, stage, file);
+    if (!target) {
+      res.status(400).json({ error: 'invalid_target' });
+      return;
+    }
+    const parsed = readJsonSafe(target);
+    const { questions } = extractQuestions(parsed);
+    const withIds = attachIds(questions);
+    const slice = withIds.slice(offset, offset + limit);
+    res.json({
+      stage,
+      file,
+      total: withIds.length,
+      offset,
+      limit,
+      items: slice,
+    });
+  });
+
+  // 修改某条
+  router.patch('/:id/items/:itemId', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const stage = String(req.query.stage || '').trim();
+    const file = String(req.query.file || '').trim();
+    const itemId = String(req.params.itemId || '').trim();
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    const target = resolveStageFile(taskDir, stage, file);
+    if (!target || !itemId) {
+      res.status(400).json({ error: 'invalid_target' });
+      return;
+    }
+    const patch = (req.body || {}) as Record<string, unknown>;
+    if (!patch || typeof patch !== 'object') {
+      res.status(400).json({ error: 'invalid_body' });
+      return;
+    }
+    delete patch._id;
+    const parsed = readJsonSafe(target);
+    const { questions, container } = extractQuestions(parsed);
+    if (container === 'unknown') {
+      res.status(400).json({ error: 'unrecognized_format' });
+      return;
+    }
+    let foundIdx = -1;
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const id = shortId(String(q.question ?? '') + '\n' + String(q.answer ?? ''));
+      if (id === itemId) {
+        foundIdx = i;
+        break;
+      }
+    }
+    if (foundIdx === -1) {
+      res.status(404).json({ error: 'item_not_found' });
+      return;
+    }
+    questions[foundIdx] = { ...questions[foundIdx], ...patch };
+    backupBeforeWrite(target);
+    try {
+      const out = container === 'array' ? questions : { ...(parsed as Record<string, unknown>), questions };
+      atomicWriteJson(target, out);
+    } catch (err) {
+      console.error('[tasks] patch item write failed:', err);
+      res.status(500).json({ error: 'write_failed' });
+      return;
+    }
+    const updated = questions[foundIdx];
+    const newId = shortId(String(updated.question ?? '') + '\n' + String(updated.answer ?? ''));
+    res.json({ ok: true, item: { ...updated, _id: newId } });
+  });
+
+  // 删除某条
+  router.delete('/:id/items/:itemId', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const stage = String(req.query.stage || '').trim();
+    const file = String(req.query.file || '').trim();
+    const itemId = String(req.params.itemId || '').trim();
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    const target = resolveStageFile(taskDir, stage, file);
+    if (!target || !itemId) {
+      res.status(400).json({ error: 'invalid_target' });
+      return;
+    }
+    const parsed = readJsonSafe(target);
+    const { questions, container } = extractQuestions(parsed);
+    if (container === 'unknown') {
+      res.status(400).json({ error: 'unrecognized_format' });
+      return;
+    }
+    const before = questions.length;
+    const kept = questions.filter((q) => {
+      const id = shortId(String(q.question ?? '') + '\n' + String(q.answer ?? ''));
+      return id !== itemId;
+    });
+    if (kept.length === before) {
+      res.status(404).json({ error: 'item_not_found' });
+      return;
+    }
+    backupBeforeWrite(target);
+    try {
+      const out = container === 'array' ? kept : { ...(parsed as Record<string, unknown>), questions: kept };
+      atomicWriteJson(target, out);
+    } catch (err) {
+      console.error('[tasks] delete item write failed:', err);
+      res.status(500).json({ error: 'write_failed' });
+      return;
+    }
+    res.json({ ok: true, removed: before - kept.length });
+  });
+
+  // ---------------------------------------------------------------
+  // 导出：JSON zip
+  // ---------------------------------------------------------------
+  router.get('/:id/export', (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const task = getOwnedTask(req, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'task_not_found' });
+      return;
+    }
+    const format = String(req.query.format || 'json').toLowerCase();
+    if (format !== 'json') {
+      res.status(400).json({ error: 'unsupported_format', message: 'M2 仅支持 json 格式导出，Word/PDF 即将到来' });
+      return;
+    }
+    const stage = String(req.query.stage || '3_8_mcq_verified').trim();
+    if (!EDITABLE_STAGES.has(stage)) {
+      res.status(400).json({ error: 'invalid_stage' });
+      return;
+    }
+    const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+    const stageDir = path.join(taskDir, stage);
+    if (!fs.existsSync(stageDir)) {
+      res.status(404).json({ error: 'stage_not_ready' });
+      return;
+    }
+    const files = listStageFiles(taskDir, stage);
+    if (files.length === 0) {
+      res.status(404).json({ error: 'empty_stage' });
+      return;
+    }
+    const safeName = task.name.replace(/[^\w\u4e00-\u9fa5\-]+/g, '_').slice(0, 80) || 'task';
+    const zipName = `${safeName}_${stage}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(zipName)}`
+    );
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (err) => {
+      console.error('[tasks] export archive error:', err);
+      try {
+        res.status(500).end();
+      } catch {
+        /* ignore */
+      }
+    });
+    archive.pipe(res);
+    for (const f of files) {
+      archive.file(path.join(stageDir, f), { name: f });
+    }
+    archive.finalize();
   });
 
   return router;

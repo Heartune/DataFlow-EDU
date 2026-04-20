@@ -57,6 +57,54 @@ const logOffset = ref(0);
 let logTimer: ReturnType<typeof setInterval> | null = null;
 let pollingInflight = false;
 
+interface SampleQuestion {
+  question?: string;
+  answer?: string;
+  type?: string;
+  category?: string;
+  subcategory?: string;
+  ability_main?: string;
+  ability_level?: string;
+  difficulty?: string | number;
+  options?: string[];
+  explanation?: string;
+}
+
+const sample = ref<{ stage: string; data: SampleQuestion } | null>(null);
+const sampleLoading = ref(false);
+let sampleTimer: ReturnType<typeof setInterval> | null = null;
+
+async function pollSample() {
+  if (sampleLoading.value) return;
+  sampleLoading.value = true;
+  try {
+    const resp = await api.get(`/tasks/${props.id}/sample-question`, {
+      validateStatus: (s) => s === 200 || s === 204 || s === 404,
+    });
+    if (resp.status === 200 && resp.data?.sample) {
+      sample.value = { stage: resp.data.stage, data: resp.data.sample };
+    }
+  } catch {
+    // ignore
+  } finally {
+    sampleLoading.value = false;
+  }
+}
+
+function ensureSamplePolling() {
+  const running = isRunning();
+  if (running && !sampleTimer) {
+    void pollSample();
+    sampleTimer = setInterval(() => void pollSample(), 8000);
+  } else if (!running && sampleTimer) {
+    clearInterval(sampleTimer);
+    sampleTimer = null;
+    void pollSample();
+  } else if (!running && !sample.value) {
+    void pollSample();
+  }
+}
+
 // parser 跨调用的状态机（同一个任务的整个生命周期内累计）
 const parserState = {
   currentStage: '' as string,
@@ -90,14 +138,6 @@ function resetParserState() {
 }
 
 const overallStatus = computed(() => task.value?.status ?? 'created');
-
-const statusLabel: Record<string, string> = {
-  created: '待启动',
-  running: '运行中',
-  succeeded: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-};
 
 const errorLabel: Record<string, string> = {
   no_progress_to_resume: '没有历史进度可续跑，请改用「从头重跑」',
@@ -526,6 +566,7 @@ onMounted(async () => {
   await loadInitial();
   startSse();
   ensureLogPolling();
+  ensureSamplePolling();
 });
 
 onBeforeUnmount(() => {
@@ -538,6 +579,10 @@ onBeforeUnmount(() => {
     clearInterval(logTimer);
     logTimer = null;
   }
+  if (sampleTimer) {
+    clearInterval(sampleTimer);
+    sampleTimer = null;
+  }
 });
 
 watch(
@@ -547,7 +592,10 @@ watch(
 
 watch(
   () => task.value?.status,
-  () => ensureLogPolling(),
+  () => {
+    ensureLogPolling();
+    ensureSamplePolling();
+  },
 );
 
 function fmtTime(s?: string | null) {
@@ -590,71 +638,46 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
 
 <template>
   <div>
-    <router-link to="/teacher/tasks" class="text-sm text-slate-500 hover:text-slate-900">
-      ← 返回任务列表
-    </router-link>
-
-    <div v-if="error" class="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-4 mt-4">
+    <div v-if="error" class="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-4">
       {{ error }}
     </div>
 
-    <div v-if="task" class="mt-4">
-      <div class="bg-white border border-slate-200 rounded-2xl p-6">
-        <div class="flex items-start justify-between gap-4">
-          <div class="min-w-0">
-            <h1 class="text-2xl font-bold text-slate-900 truncate">{{ task.name }}</h1>
-            <p class="text-xs text-slate-500 mt-1 font-mono break-all">{{ task.id }}</p>
-          </div>
-          <div class="flex items-center gap-2 flex-shrink-0">
-            <button
-              v-if="overallStatus !== 'running' && overallStatus !== 'created'"
-              class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
-              :disabled="!!actionBusy"
-              @click="onResume"
-            >
-              {{ actionBusy === 'resume' ? '续跑中...' : '续跑' }}
-            </button>
-            <button
-              v-if="overallStatus !== 'running' && overallStatus !== 'created'"
-              class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
-              :disabled="!!actionBusy"
-              @click="onRestart"
-            >
-              {{ actionBusy === 'restart' ? '重启中...' : '从头重跑' }}
-            </button>
-            <button
-              v-if="overallStatus === 'running'"
-              class="px-3 py-1.5 text-sm border border-rose-300 rounded-lg text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-              :disabled="!!actionBusy"
-              @click="onStop"
-            >
-              {{ actionBusy === 'stop' ? '停止中...' : '停止' }}
-            </button>
-            <span
-              :class="[
-                'px-3 py-1 rounded-full text-sm border',
-                overallStatus === 'running'
-                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                  : overallStatus === 'succeeded'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : overallStatus === 'failed'
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : overallStatus === 'cancelled'
-                        ? 'bg-slate-100 text-slate-600 border-slate-300'
-                        : 'bg-slate-50 text-slate-600 border-slate-200',
-              ]"
-            >
-              {{ statusLabel[overallStatus] || overallStatus }}
-            </span>
-          </div>
+    <div v-if="task">
+      <div class="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3 flex-wrap">
+        <div class="text-sm text-slate-500">
+          <span v-if="progress?.current_stage">当前阶段：<span class="text-slate-900 font-medium">{{ progress.current_stage }}</span></span>
+          <span v-else>—</span>
         </div>
-
-        <div v-if="actionMsg" class="mt-3 text-sm text-rose-600">{{ actionMsg }}</div>
-
-        <div v-if="progress?.error" class="mt-3 text-sm text-rose-600">
-          错误：{{ progress.error }}
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <button
+            v-if="overallStatus !== 'running' && overallStatus !== 'created'"
+            class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
+            :disabled="!!actionBusy"
+            @click="onResume"
+          >
+            {{ actionBusy === 'resume' ? '续跑中...' : '续跑' }}
+          </button>
+          <button
+            v-if="overallStatus !== 'running' && overallStatus !== 'created'"
+            class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
+            :disabled="!!actionBusy"
+            @click="onRestart"
+          >
+            {{ actionBusy === 'restart' ? '重启中...' : '从头重跑' }}
+          </button>
+          <button
+            v-if="overallStatus === 'running'"
+            class="px-3 py-1.5 text-sm border border-rose-300 rounded-lg text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+            :disabled="!!actionBusy"
+            @click="onStop"
+          >
+            {{ actionBusy === 'stop' ? '停止中...' : '停止' }}
+          </button>
         </div>
       </div>
+
+      <div v-if="actionMsg" class="mt-3 text-sm text-rose-600">{{ actionMsg }}</div>
+      <div v-if="progress?.error" class="mt-3 text-sm text-rose-600">错误：{{ progress.error }}</div>
 
       <div class="mt-6">
         <h2 class="text-sm font-semibold text-slate-700 mb-3">阶段进度</h2>
@@ -704,6 +727,63 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
           </div>
         </div>
       </div>
+
+      <div class="mt-6">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold text-slate-700">最新一题预览</h2>
+          <span v-if="sample" class="text-xs text-slate-400 font-mono">{{ sample.stage }}</span>
+        </div>
+        <transition name="fade" mode="out-in">
+          <div
+            v-if="sample"
+            :key="(sample.data.question || '') + (sample.data.answer || '')"
+            class="bg-white border border-slate-200 rounded-2xl p-5"
+          >
+            <div class="flex items-center gap-2 flex-wrap text-xs mb-3">
+              <span v-if="sample.data.type" class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                {{ sample.data.type }}
+              </span>
+              <span v-if="sample.data.category" class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                {{ sample.data.category }}<span v-if="sample.data.subcategory"> · {{ sample.data.subcategory }}</span>
+              </span>
+              <span v-if="sample.data.ability_main" class="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                {{ sample.data.ability_main }}<span v-if="sample.data.ability_level"> · {{ sample.data.ability_level }}</span>
+              </span>
+              <span v-if="sample.data.difficulty" class="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                难度 {{ sample.data.difficulty }}
+              </span>
+            </div>
+            <p class="text-sm text-slate-900 whitespace-pre-wrap">{{ sample.data.question }}</p>
+            <ul v-if="sample.data.options?.length" class="mt-2 text-sm text-slate-700 space-y-1">
+              <li v-for="(o, i) in sample.data.options" :key="i" class="pl-2">{{ o }}</li>
+            </ul>
+            <div v-if="sample.data.answer" class="mt-3 text-sm">
+              <span class="text-slate-500">答案：</span>
+              <span class="text-emerald-700 font-medium whitespace-pre-wrap">{{ sample.data.answer }}</span>
+            </div>
+            <p v-if="sample.data.explanation" class="mt-2 text-xs text-slate-500 whitespace-pre-wrap">
+              解析：{{ sample.data.explanation }}
+            </p>
+          </div>
+          <div
+            v-else
+            class="bg-white border border-dashed border-slate-200 rounded-2xl p-5 text-sm text-slate-400 text-center"
+          >
+            等待第一批题目产出后将自动展示...
+          </div>
+        </transition>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.4s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

@@ -32,9 +32,34 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'tasks/:id',
-        name: 'teacher-task-detail',
-        component: () => import('@/views/teacher/TaskDetailView.vue'),
+        component: () => import('@/views/teacher/TaskShellView.vue'),
         props: true,
+        children: [
+          {
+            path: '',
+            name: 'teacher-task-progress',
+            component: () => import('@/views/teacher/TaskDetailView.vue'),
+            props: true,
+          },
+          {
+            path: 'wizard',
+            name: 'teacher-task-wizard',
+            component: () => import('@/views/teacher/WizardView.vue'),
+            props: true,
+          },
+          {
+            path: 'edit',
+            name: 'teacher-task-edit',
+            component: () => import('@/views/teacher/EditView.vue'),
+            props: true,
+          },
+          {
+            path: 'export',
+            name: 'teacher-task-export',
+            component: () => import('@/views/teacher/ExportView.vue'),
+            props: true,
+          },
+        ],
       },
     ],
   },

@@ -77,6 +77,30 @@ export function configRoutes(projectRoot: string): Router {
     }
   });
 
+  // 只读返回 preset 内容（不写全局 edu_config.yaml），供向导/新建任务页灌默认值
+  router.get('/config/presets/:name', async (req: Request, res: Response) => {
+    const name = req.params.name?.trim();
+    if (!name || /[.\\/]/.test(name)) {
+      res.status(400).json({ error: '无效预设名称' });
+      return;
+    }
+    const tryPaths = [
+      path.join(presetsDir, `${name}.yaml`),
+      path.join(presetsDir, `${name}.yml`),
+    ];
+    for (const p of tryPaths) {
+      try {
+        const content = await fs.readFile(p, 'utf-8');
+        const parsed = yaml.load(content) as object;
+        res.json(parsed);
+        return;
+      } catch {
+        continue;
+      }
+    }
+    res.status(404).json({ error: '预设不存在' });
+  });
+
   router.post('/config/presets/:name', async (req: Request, res: Response) => {
     const name = req.params.name?.trim();
     if (!name || /[.\\/]/.test(name)) {

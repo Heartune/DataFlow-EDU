@@ -521,14 +521,32 @@ def _pdf_to_images(task_name: str, task_dir: str, input_pdf: str, dpi: int = 100
 
 
 def _build_config_with_overrides(task_dir: str):
-    """加载主配置 → 兜底 default_config → 覆写所有路径到 task_dir。"""
+    """加载配置（task_dir/config.yaml 优先于全局 edu_config.yaml）→ 兜底 default_config → 覆写所有路径到 task_dir。
+
+    优先级：
+      1. task_dir/config.yaml（M2 起 webui 向导写入此处，每个任务一份）
+      2. dataflow_edu/config/edu_config.yaml（旧的全局配置）
+      3. default_config()
+    """
     from dataflow_edu.config.loader import get_config_path, load_config
     from dataflow_edu.config.schema import default_config
 
-    config = load_config(project_root=_PROJECT_ROOT)
-    cfg_path = get_config_path(_PROJECT_ROOT)
-    if not os.path.isfile(cfg_path):
-        config = default_config()
+    task_cfg_path = os.path.join(task_dir, "config.yaml")
+    if os.path.isfile(task_cfg_path):
+        try:
+            config = load_config(path=task_cfg_path, project_root=_PROJECT_ROOT)
+            print(f"[runner] 使用任务专用配置: {task_cfg_path}", flush=True)
+        except Exception as e:
+            print(f"[runner] 读取 {task_cfg_path} 失败 ({e})，回退到全局配置", flush=True)
+            config = load_config(project_root=_PROJECT_ROOT)
+            cfg_path = get_config_path(_PROJECT_ROOT)
+            if not os.path.isfile(cfg_path):
+                config = default_config()
+    else:
+        config = load_config(project_root=_PROJECT_ROOT)
+        cfg_path = get_config_path(_PROJECT_ROOT)
+        if not os.path.isfile(cfg_path):
+            config = default_config()
     # 兜底所有缺失的算子条目
     base = default_config()
     for k, v in base.operators.items():

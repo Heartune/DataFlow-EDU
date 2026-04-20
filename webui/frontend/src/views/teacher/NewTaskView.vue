@@ -80,10 +80,8 @@ async function submit() {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
 
-    progress.value = '正在启动 pipeline...';
-    await api.post(`/tasks/${created.task_id}/run`);
-
-    router.replace(`/teacher/tasks/${created.task_id}`);
+    progress.value = '上传完成，进入配置向导...';
+    router.replace(`/teacher/tasks/${created.task_id}/wizard`);
   } catch (err: any) {
     const code = err?.response?.data?.error;
     if (code === 'daily_quota_exceeded') {
@@ -179,7 +177,7 @@ async function submit() {
           :disabled="uploading"
           @click="submit"
         >
-          {{ uploading ? '提交中...' : '上传并开始运行' }}
+          {{ uploading ? '上传中...' : '上传并配置任务' }}
         </button>
       </div>
     </div>
