@@ -1,0 +1,98 @@
+{
+  "processed": {
+    "157": "repaired",
+    "132": "repaired",
+    "173": "repaired",
+    "313": "repaired",
+    "274": "repaired",
+    "57": "repaired",
+    "299": "repaired",
+    "218": "repaired",
+    "114": "repaired",
+    "93": "repaired",
+    "246": "repaired",
+    "82": "repaired",
+    "162": "repaired",
+    "159": "repaired",
+    "103": "repaired"
+  },
+  "patches": {
+    "157": {
+      "question_fr": "A. La polarité des molécules d'eau leur permet de se lier facilement à des molécules chargées positivement ou négativement, faisant de l'eau un excellent solvant. B. L'existence de liaisons hydrogène confère à l'eau une capacité thermique massique élevée, ce qui est crucial pour maintenir la stabilité des systèmes biologiques. C. L'eau liée est adsorbée à la surface des macromolécules comme les protéines par des liaisons hydrogène, constituant un composant structurel important de la cellule. D. En raison de la rupture et de la formation constantes des liaisons hydrogène, l'eau libre existe principalement sous forme fixe dans les cellules et ne participe pas au transport des substances.",
+      "answer_fr": "D"
+    },
+    "132": {
+      "question_fr": "A. Le panda géant et le bambou flèche ont des niveaux d'organisation biologique parfaitement identiques B. Les cellules du mésophylle du bambou appartiennent au niveau cellulaire et constituent l'unité de base de la photosynthèse C. L'énergie finale de l'écosystème où vivent le panda et le bambou provient de l'énergie solaire D. Chaque niveau du système vivant possède une structure et des fonctions spécifiques tout en étant interconnecté",
+      "answer_fr": "A"
+    },
+    "173": {
+      "question_fr": "A. La teneur en oxygène des molécules de graisse est bien supérieure à celle du glycogène B. La teneur en hydrogène des molécules de graisse est plus élevée et la teneur en oxygène est plus faible C. Le poids moléculaire des graisses est inférieur à celui du glycogène, ce qui les rend plus faciles à oxyder D. Les graisses consomment moins d'oxygène que le glycogène lors de leur décomposition par oxydation",
+      "answer_fr": "B"
+    },
+    "313": {
+      "question": "ATP 为 $\text{Ca}^{2+}$ 的逆浓度梯度跨膜运输供能时，载体蛋白会发生磷酸化。下列关于该过程的叙述，最能体现“结构与功能观”的是（    ） A. ATP 分子的末端磷酸基团脱离并释放能量的过程 B. Ca2+ 逆浓度梯度跨膜运输需要消耗 ATP 的过程 C. 磷酸化导致载体蛋白空间结构改变并介导离子转运的过程 D. 载体蛋白作为催化剂降低 ATP 水解反应活化能的过程",
+      "answer": "C",
+      "question_en": "When ATP provides energy for the transmembrane transport of $\\text{Ca}^{2+}$ against its concentration gradient, the carrier protein undergoes phosphorylation. Which of the following descriptions of this process best reflects the concept of \"structure and function\"? (    ) A. The transport of calcium ions is a passive process that does not require structural changes in the carrier protein. B. ATP hydrolysis provides energy for transport but has no direct effect on the spatial conformation of the protein. C. Phosphorylation induces a change in the spatial structure of the carrier protein, which facilitates the transport of calcium ions. D. The carrier protein remains in a fixed conformation to ensure the continuous and rapid diffusion of calcium ions.",
+      "answer_en": "C",
+      "question_fr": "A. Le processus par lequel le groupement phosphate terminal de l'ATP se détache et libère de l'énergie B. Le processus de transport transmembranaire du Ca2+ contre son gradient de concentration nécessitant de l'ATP C. Le processus où la phosphorylation modifie la structure spatiale de la protéine de transport pour médier le transfert d'ions D. Le processus où la protéine de transport agit comme catalyseur pour abaisser l'énergie d'activation de l'hydrolyse de l'ATP",
+      "answer_fr": "C"
+    },
+    "274": {
+      "question_fr": "A. Les ions iodure pénètrent dans la cellule par des canaux ioniques suivant le gradient de concentration. B. La cellule absorbe l'iode par transport actif, un processus qui nécessite des protéines de transport et consomme de l'énergie. C. La vitesse d'absorption des ions iodure dépend uniquement de leur concentration à l'extérieur de la cellule. D. La bicouche phospholipidique de la membrane cellulaire fournit l'énergie nécessaire à l'absorption des ions iodure.",
+      "answer_fr": "B"
+    },
+    "57": {
+      "question_fr": "A. Le flottement est dû à la pénétration de la solution de NaHCO3 dans les feuilles, ce qui augmente directement leur flottabilité. B. L'oxygène produit par la photosynthèse s'accumule dans les espaces intercellulaires, diminuant la densité des feuilles et les faisant flotter. C. Les feuilles flottent car la respiration cellulaire consomme de la matière organique, ce qui réduit significativement le poids des feuilles. D. Le flottement est dû à l'augmentation de la température de l'eau sous l'effet de la lumière, le mouvement thermique des molécules d'eau soulevant les feuilles.",
+      "answer_fr": "B"
+    },
+    "299": {
+      "question_fr": "A. La structure spatiale de l'enzyme et la structure du substrat s'adaptent l'une à l'autre, ce qui constitue la base de la spécificité. B. Après la liaison du centre actif avec le substrat, la conformation de l'enzyme ne subit aucun changement. C. La liaison spécifique de l'enzyme avec le substrat pour former un complexe enzyme-substrat est le préalable à la réaction. D. Une certaine enzyme ne peut catalyser que la réaction de substrats possédant des liaisons chimiques ou des groupements spécifiques.",
+      "answer_fr": "B"
+    },
+    "218": {
+      "question": "人工合成的脂质体（由磷脂双分子层构成的球形小体）可作为药物的运载体。若要将某种水溶性抗癌药物运送到细胞内，该药物应包裹在脂质体的内部水相空间中，这体现了生物学中“物质的结构与功能相适应”的什么观点？ A. 结构与功能观 B. 物质与能量观 C. 进化与适应观 D. 稳态与平衡观",
+      "answer": "A",
+      "question_en": "Synthetic liposomes (spherical vesicles composed of a phospholipid bilayer) can serve as drug carriers. To deliver a water-soluble anti-cancer drug into cells, the drug should be encapsulated within the internal aqueous phase of the liposome. Which perspective of the biological principle \"structure is adapted to function\" does this demonstrate? A. Evolution and Adaptation View B. Structure and Function View C. Material and Energy View D. System and Homeostasis View",
+      "answer_en": "B",
+      "question_fr": "A. Concept de structure et de fonction B. Concept de matière et d'énergie C. Concept d'évolution et d'adaptation D. Concept d'homéostasie et d'équilibre",
+      "answer_fr": "A"
+    },
+    "114": {
+      "question_fr": "A. La durée de vie des cellules est déterminée uniquement par leur environnement tissulaire et n'a aucun lien avec leur fonction. B. La durée de vie et la capacité de division des cellules sont adaptées à leurs fonctions physiologiques, illustrant l'unité entre structure et fonction. C. La courte durée de vie des globules blancs est due à l'absence de noyau, ce qui empêche la synthèse des protéines. D. Les cellules musculaires lisses se divisent pour compenser la consommation immunitaire en produisant de nouveaux globules blancs.",
+      "answer_fr": "B"
+    },
+    "93": {
+      "question_fr": "A. Le saccharose dans le milieu de culture sert à la fois de source de carbone et de régulateur de la pression osmotique cellulaire. B. Au début de la culture, les cellules isolées du phloème de carotte synthétisent principalement de la matière organique par photosynthèse. C. Les sels minéraux absorbés par les cellules peuvent être utilisés pour synthétiser des macromolécules ou composés importants tels que la chlorophylle et les nucléotides. D. Pendant le processus de culture tissulaire, les cellules convertissent l'énergie chimique des glucides en énergie chimique sous forme d'ATP et en chaleur par la respiration.",
+      "answer_fr": "B"
+    },
+    "246": {
+      "question_fr": "A. Utiliser de la pâte à modeler de différentes couleurs pour fabriquer des mitochondries et les placer dans le cytosol B. Utiliser des fils chenille pour simuler la chromatine et les placer à l'intérieur d'une enveloppe nucléaire à double membrane C. Percer des trous sur l'enveloppe nucléaire pour simuler les pores nucléaires et les définir comme des canaux de libre passage pour l'eau et les ions D. Concevoir le nucléole comme la plus grande structure du modèle pour mettre en avant sa fonction de synthèse des protéines",
+      "answer_fr": "B"
+    },
+    "82": {
+      "question": "动物细胞在有丝分裂末期，其细胞膜从中部向内凹陷，最终将细胞质缢裂成两部分。这一过程主要体现了细胞膜的结构特点与功能相适应的观点，下列叙述最能体现这一观点的是： A. 细胞膜具有一定的流动性，是实现细胞缢裂的结构基础 B. 细胞膜具有选择透过性，有利于子细胞从外界吸收营养物质 C. 细胞膜以磷脂双分子层为基本支架，保证了细胞形态的固定 D. 细胞膜上的蛋白质具有特异性，决定了细胞分裂的频率",
+      "answer": "A",
+      "question_en": "During the telophase of mitosis in animal cells, the cell membrane invaginates from the middle, eventually cleaving the cytoplasm into two parts. This process primarily reflects the view that the structural characteristics of the cell membrane are adapted to its function. Which of the following statements best embodies this view: A. The cell membrane is a static structure that provides rigid support for the cell. B. The cell membrane possesses a certain degree of fluidity, which serves as the structural basis for cell furrowing. C. The cell membrane is composed of a fixed phospholipid bilayer that prevents any shape changes. D. The cell membrane is completely impermeable to ensure the stability of the cytoplasm during division.",
+      "answer_en": "B",
+      "question_fr": "A. La membrane plasmique possède une certaine fluidité, ce qui constitue la base structurelle de l'étranglement cellulaire. B. La membrane plasmique présente une perméabilité sélective, facilitant l'absorption des nutriments par les cellules filles. C. La membrane plasmique utilise une bicouche phospholipidique comme support de base, garantissant la fixité de la forme cellulaire. D. Les protéines membranaires possèdent une spécificité qui détermine directement la fréquence de la division cellulaire.",
+      "answer_fr": "A"
+    },
+    "162": {
+      "question": "水分子中氧原子端带有负电荷，氢原子端带有正电荷，这种极性分子的特性使得水分子间能够形成氢键。下列关于水分子结构与功能关系的叙述，错误的是（  ） A. 水分子的极性使其成为良好的溶剂，有助于营养物质和代谢废物的运输 B. 氢键的存在使水具有较高的比热容，对于维持生命系统的稳定性具有重要意义 C. 水在结冰时氢键会引导水分子形成规则晶格结构，使冰的密度小于液态水 D. 氢键是水分子内部氧原子和氢原子之间通过共用电子对形成的强化学键",
+      "answer": "D",
+      "question_en": "In a water molecule, the oxygen end carries a negative charge and the hydrogen end carries a positive charge. This polar nature allows for the formation of hydrogen bonds between water molecules. Which of the following statements regarding the relationship between the structure and function of water molecules is incorrect? (  ) A. The polarity of water molecules allows them to serve as an excellent solvent for transporting nutrients and metabolic wastes. B. Hydrogen bonds between water molecules contribute to water's high specific heat capacity, helping organisms maintain temperature homeostasis. C. The formation of a regular lattice structure in ice due to hydrogen bonds ensures that ice is less dense than liquid water. D. Hydrogen bonds are strong intramolecular chemical bonds that are much stronger than the covalent bonds within a water molecule.",
+      "answer_en": "D",
+      "question_fr": "A. La polarité de la molécule d'eau en fait un excellent solvant, ce qui facilite le transport des nutriments et des déchets métaboliques. B. La présence de liaisons hydrogène confère à l'eau une capacité thermique massique élevée, essentielle au maintien de la stabilité des systèmes biologiques. C. Lors de la congélation, les liaisons hydrogène orientent les molécules d'eau en une structure cristalline régulière, rendant la densité de la glace inférieure à celle de l'eau liquide. D. Les liaisons hydrogène sont des liaisons chimiques fortes formées par le partage d'électrons entre les atomes d'oxygène et d'hydrogène au sein d'une molécule d'eau.",
+      "answer_fr": "D"
+    },
+    "159": {
+      "question_fr": "A. La polarité des molécules d'eau en fait un excellent solvant, capable de dissoudre de nombreux ions et molécules polaires. B. Les liaisons hydrogène entre les molécules d'eau sont faibles, se rompent et se reforment facilement, ce qui permet à l'eau d'être liquide à température ambiante. C. La présence de liaisons hydrogène donne à l'eau une capacité thermique massique élevée, essentielle au maintien de la stabilité des systèmes vivants. D. La fluidité de l'eau dépend uniquement de la polarité des molécules d'eau et n'est pas liée à la rupture et à la formation constante des liaisons hydrogène.",
+      "answer_fr": "D"
+    },
+    "103": {
+      "question_fr": "A. La diminution de la teneur en eau intracellulaire entraîne une atrophie cellulaire et réduit l'activité de diverses enzymes. B. Les changements de perméabilité de la membrane cellulaire réduisent la fonction de transport des substances, affectant le métabolisme normal. C. L'augmentation du volume du noyau, l'invagination de la membrane nucléaire et la condensation de la chromatine favorisent l'expression efficace de l'information génétique. D. L'accumulation de pigments intracellulaires entrave l'échange et le transfert de substances au sein de la cellule, affectant ainsi ses fonctions.",
+      "answer_fr": "C"
+    }
+  },
+  "failures": {}
+}
