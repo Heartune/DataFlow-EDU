@@ -412,8 +412,13 @@ _STAGE_OUTPUT_DIRS: dict[str, list[str]] = {
 }
 
 
-def _wipe_task_dir(task_dir: str, keep: tuple[str, ...] = ("input.pdf",)) -> None:
-    """删除 task_dir 下除 keep 之外的所有内容（包括 progress.json / runner.log / 各 stage 子目录）。"""
+def _wipe_task_dir(task_dir: str, keep: tuple[str, ...] = ("input.pdf", "config.yaml")) -> None:
+    """删除 task_dir 下除 keep 之外的所有内容（包括 progress.json / runner.log / 各 stage 子目录）。
+
+    keep 必须包含 webui 向导写入的任务级配置 `config.yaml`，否则 `--reset` 会把它一起删掉，
+    导致 `_build_config_with_overrides` 静默回退到全局 edu_config.yaml，重跑时丢失
+    subject/grade/difficulty/operators 等任务专属配置。
+    """
     import shutil
 
     if not os.path.isdir(task_dir):
