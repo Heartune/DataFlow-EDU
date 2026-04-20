@@ -534,7 +534,13 @@ def _build_config_with_overrides(task_dir: str):
     task_cfg_path = os.path.join(task_dir, "config.yaml")
     if os.path.isfile(task_cfg_path):
         try:
-            config = load_config(path=task_cfg_path, project_root=_PROJECT_ROOT)
+            # strict=True：让 YAML 解析错误抛出，避免 load_config 静默吞掉异常
+            # 后误以为加载成功（fallback 链就完全走不到了）。
+            config = load_config(
+                path=task_cfg_path,
+                project_root=_PROJECT_ROOT,
+                strict=True,
+            )
             print(f"[runner] 使用任务专用配置: {task_cfg_path}", flush=True)
         except Exception as e:
             print(f"[runner] 读取 {task_cfg_path} 失败 ({e})，回退到全局配置", flush=True)

@@ -420,8 +420,18 @@ def _dict_to_config(d: dict, project_root: Optional[str] = None) -> EduConfig:
 def load_config(
     path: Optional[str] = None,
     project_root: Optional[str] = None,
+    strict: bool = False,
 ) -> EduConfig:
-    """加载配置，文件不存在时返回默认配置。"""
+    """加载配置，文件不存在时返回默认配置。
+
+    Args:
+        path: 配置文件路径，None 则使用全局默认路径。
+        project_root: 项目根目录，用于解析相对路径。
+        strict: 默认 False 时遇到 YAML 解析错误等异常会静默回退到 default_config()；
+            设为 True 时异常会向上抛出，便于调用方区分「文件存在但损坏」和
+            「文件正常」两种情况，从而决定是否走自己的 fallback 链。
+            注意：文件不存在 / 内容为空 始终返回 default_config()，不受 strict 影响。
+    """
     if path is None:
         path = get_config_path(project_root)
     if not os.path.isfile(path):
@@ -433,6 +443,8 @@ def load_config(
             return default_config()
         return _dict_to_config(d, project_root)
     except Exception:
+        if strict:
+            raise
         return default_config()
 
 
