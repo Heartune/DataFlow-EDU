@@ -22,6 +22,13 @@ export default {
           from: { opacity: '0', transform: 'translateY(16px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
+        breathe: {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.78' },
+        },
+        spinSlow: {
+          to: { transform: 'rotate(360deg)' },
+        },
         slideInRight: {
           from: { transform: 'translateX(100%)' },
           to: { transform: 'translateX(0)' },
@@ -45,6 +52,8 @@ export default {
         'slide-out-right': 'slideOutRight 0.3s ease-out forwards',
         'fade-in': 'fadeIn 0.3s ease-out forwards',
         'fade-out': 'fadeOut 0.3s ease-out forwards',
+        breathe: 'breathe 2.6s ease-in-out infinite',
+        'spin-slow': 'spinSlow 1.1s linear infinite',
       },
       animationDelay: {
         'd1': '0.05s',
