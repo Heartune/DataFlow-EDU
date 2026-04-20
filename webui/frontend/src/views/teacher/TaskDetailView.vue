@@ -6,7 +6,7 @@ const props = defineProps<{ id: string }>();
 
 interface StageInfo {
   name: string;
-  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled';
   started_at?: string;
   finished_at?: string;
   error?: string;
@@ -156,6 +156,7 @@ const stageStatusClass: Record<StageInfo['status'], string> = {
   succeeded: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   failed: 'bg-rose-50 text-rose-700 border-rose-200',
   skipped: 'bg-slate-50 text-slate-500 border-slate-200',
+  cancelled: 'bg-amber-50 text-amber-700 border-amber-200',
 };
 
 const stageDot: Record<StageInfo['status'], string> = {
@@ -164,6 +165,7 @@ const stageDot: Record<StageInfo['status'], string> = {
   succeeded: '●',
   failed: '✕',
   skipped: '–',
+  cancelled: '◯',
 };
 
 async function loadInitial() {
@@ -614,6 +616,7 @@ function barPercent(info: StageProgress | undefined, status: StageInfo['status']
 function barColorClass(info: StageProgress | undefined, status: StageInfo['status']): string {
   if (status === 'succeeded') return 'bg-emerald-300';
   if (status === 'failed' || info?.failed) return 'bg-rose-400';
+  if (status === 'cancelled') return 'bg-amber-300';
   if (info?.indeterminate) return 'bg-amber-300 animate-pulse';
   return 'bg-amber-400';
 }
@@ -677,7 +680,15 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
       </div>
 
       <div v-if="actionMsg" class="mt-3 text-sm text-rose-600">{{ actionMsg }}</div>
-      <div v-if="progress?.error" class="mt-3 text-sm text-rose-600">错误：{{ progress.error }}</div>
+      <div
+        v-if="progress?.error"
+        :class="[
+          'mt-3 text-sm',
+          overallStatus === 'cancelled' ? 'text-amber-700' : 'text-rose-600',
+        ]"
+      >
+        {{ overallStatus === 'cancelled' ? '已停止：' : '错误：' }}{{ progress.error }}
+      </div>
 
       <div class="mt-6">
         <h2 class="text-sm font-semibold text-slate-700 mb-3">阶段进度</h2>
@@ -703,7 +714,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
               <div v-if="s.error" class="mt-1 break-words">{{ s.error }}</div>
               <div v-if="s.note" class="mt-1">{{ s.note }}</div>
             </div>
-            <template v-if="['running', 'succeeded', 'failed'].includes(s.status)">
+            <template v-if="['running', 'succeeded', 'failed', 'cancelled'].includes(s.status)">
               <div class="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                 <div
                   class="h-full transition-all duration-300"

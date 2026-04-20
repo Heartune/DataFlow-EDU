@@ -462,6 +462,7 @@ export function tasksRoutes(projectRoot: string): Router {
 
     const userId = req.user!.id;
     const taskId = task.id;
+    const childTaskDir = taskDir;
     child.on('exit', (code, signal) => {
       const wasStopped = stoppingTasks.delete(taskId);
       let finalStatus: 'succeeded' | 'failed' | 'cancelled';
@@ -478,6 +479,17 @@ export function tasksRoutes(projectRoot: string): Router {
           .run(finalStatus, Date.now(), taskId);
       } catch (err) {
         console.error('[tasks] update final status failed:', err);
+      }
+      // Windows 下 taskkill /T /F 是强杀，Python 来不及把 progress.json 里
+      // status==='running' 的 stage 改成终态，UI 上对应卡片会一直转圈。
+      // 这里在子进程退出时统一兜底一次：把 progress.json 里残留 running 的
+      // stage 与顶层 status 一并改成 cancelled / failed。
+      if (finalStatus === 'cancelled' || finalStatus === 'failed') {
+        const errMsg =
+          finalStatus === 'cancelled'
+            ? '任务已被用户停止，子进程被强制结束'
+            : `子进程异常退出 (code=${code ?? 'null'}, signal=${signal ?? 'null'})`;
+        markOrphanedProgress(childTaskDir, finalStatus, errMsg);
       }
       runningByUser.delete(userId);
       logStream.write(
@@ -610,6 +622,22 @@ export function tasksRoutes(projectRoot: string): Router {
         res.json({ task_id: task.id, status: 'cancelled', mode: 'orphan_recovered' });
         return;
       }
+      // 任务已在终态（succeeded / failed / cancelled），但 progress.json 里
+      // 可能还残留 running 的 stage（强杀 Python 时来不及写入终态）。
+      // 这里允许用户用「停止」当作"清理 UI 卡死"的兜底入口：把残留的
+      // running stage 一并改成 task 当前的终态（succeeded 时则不改，避免覆盖正常完结的状态）。
+      if (task.status === 'cancelled' || task.status === 'failed') {
+        const taskDir = userTaskRoot(projectRoot, req.user.id, task.id);
+        markOrphanedProgress(
+          taskDir,
+          task.status,
+          task.status === 'cancelled'
+            ? '任务已被停止，UI 残留状态已清理'
+            : '任务已失败，UI 残留状态已清理'
+        );
+        res.json({ task_id: task.id, status: task.status, mode: 'progress_cleaned' });
+        return;
+      }
       res.status(409).json({ error: 'task_not_running' });
       return;
     }
@@ -687,6 +715,18 @@ export function tasksRoutes(projectRoot: string): Router {
       return;
     }
     const taskDir = userTaskRoot(projectRoot, task.user_id, task.id);
+    // 兜底愈合：task 已在终态但 progress.json 里仍有 running 的 stage
+    // （Windows 强杀 Python 时来不及写终态），读取详情时顺便清一次，
+    // 让前端 UI 不再卡在转圈状态。succeeded 不动，避免覆盖正常完结。
+    if (task.status === 'cancelled' || task.status === 'failed') {
+      markOrphanedProgress(
+        taskDir,
+        task.status,
+        task.status === 'cancelled'
+          ? '任务已被停止，UI 残留状态已清理'
+          : '任务已失败，UI 残留状态已清理'
+      );
+    }
     res.json({
       task: {
         id: task.id,
