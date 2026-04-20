@@ -1,26 +1,119 @@
-# 环境变量与 API Key
+# ===== 项目自维护文件 =====
+plan.md
+agent_notes.md
+CHANGELOG.md
+tracked_files.tmp
+
+# ===== 环境变量与 API Key（务必全部忽略，含子目录）=====
 .env
 .env.*
+**/.env
+**/.env.*
+*.env.local
+*.env.development
+*.env.production
 
-# LLM / MinerU 等运行时配置（含敏感信息）
+# ===== LLM / MinerU 等运行时配置（含敏感信息）=====
 .llm_config.json
+**/.llm_config.json
 **/.mineru_ocr_config.json
 **/.optimize_answers_config.json
 **/.gen_judgment_config.json
 **/.gen_model_answer_config.json
 
-# resources 大文件（md 保留）
+# 通用密钥/凭据文件
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*secret*.json
+*apikey*
+*api_key*
+service-account*.json
+
+# ===== Python 字节码 / 缓存 =====
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# ===== Python 构建 / 测试 / 类型缓存 =====
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+pip-wheel-metadata/
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+ENV/
+
+# ===== Jupyter / IPython =====
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===== IDE / 编辑器 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cursor/
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 日志 =====
+*.log
+logs/
+runner.log
+
+# ===== resources 大文件（md 保留）=====
 dataflow_edu/data/resources/**/*.pdf
 dataflow_edu/data/resources/**/img/
 
-ideas.md
-
-# Node 依赖
+# ===== Node 依赖 / 前端构建产物 =====
 node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# 含敏感信息的工具目录
+# ===== WebUI 服务端运行时数据（SQLite、上传缓存等）=====
+webui/server/data/
+webui/server/.env
+webui/server/dist/
+
+# ===== 多用户任务工作目录 =====
+dataflow_edu/data/users/
+
+# ===== 含敏感信息的工具目录 =====
 utils_from_CNLaw-Bench/
 utils_from_ROBOTheory/
 
-# Files over 100 MB (Automatically added)
+# ===== 临时 / 评估 scratch 目录 =====
+.tmp_skill_eval_*/
+.tmp/
+tmp/
+
+# ===== 大文件兜底（>100 MB）=====
 dataflow_edu/data/resources/pdf/网络与信息法学.pdf
