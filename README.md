@@ -4,6 +4,11 @@
 
 > Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
 
+> 教师友好 Web 入口（M1 本地开发版）：
+> 1. `cd webui/server && cp .env.example .env`（按需改 `JWT_SECRET / ADMIN_*`），`npm install && npm run dev`
+> 2. `cd webui/frontend && npm install && npm run dev`，浏览器访问 Vite 输出的地址（默认 http://127.0.0.1:5173 ）
+> 3. 注册账号 → 新建任务 → 上传教材 PDF → 填 BYOK key → 实时观察阶段进度。所有产物落 `dataflow_edu/data/users/<uid>/<task_id>/`。
+
 ## 核心定位说明
 
 基于我在包含7.9万条语料的机器人理论语料库ROBOTheory-79k、规模1.6T网络安全专业语料库CyberSecCorpus、电子信息学科数据集EE-Bench、中国法律大模型评测基准CNLaw-Bench方面的丰富构建经验，我的核心目标是打造 **DataFlow-EDU**——一条高度自动化、算子化且具备通用性的「学科数据集与评测基准（Benchmark）」生产管线。该管线贯穿从「原始教材输入」到「高质量结构化题库输出」的全生命周期。它不仅包含基于 MinerU 的多模态文档解析、切片式题库生成与题型动态均衡模块，更深度融入了目标团队 DataFlow 的算子化清洗哲学。通过灵活串联条件过滤、领域对齐 与基于 Question Verify 的 LLM-as-a-Judge 多维能力审阅等定制化算子，最终实现自动化、批量化地生产低幻觉、高质量、均衡分布的学科评测集与训练语料，成为赋能各类学科大模型能力跃升的基础设施。这套系统支持包括教材在内的任意PDF教学资源输入，这里我将以一本高中生物必修一教材（PDF格式）作为资源，进行项目demo演示。
@@ -189,7 +194,11 @@ DataFlow-EDU/
 ---
 
 ## TODO
+- [ ] plan.md 中的计划
+- [ ] 合并 1.1 和 1.2，直接解析 pdf，而非将 pdf 转为 image
 - [ ] 加入对课件的支持
+- [ ] 加入对幻灯片的支持（PPT2PDF）
 - [ ] 有能提升难度的地方可以自己改一下，比如生成一些东西的时候
-- [ ] 平民化webui设计，完善参数配置自由度，开发拖动控件和实时进度预览
-- [ ] 优化终端与webui的联动，比如webui实时监控生成情况并同步，或终端每完成一个算子就给出对应阶段的webui url，方便用户快捷跳转
+- [ ] 平民化 webui 设计，完善参数配置自由度，开发拖动控件和实时进度预览
+- [ ] 优化终端与 webui 的联动，比如 webui 实时监控生成情况并同步，或终端每完成一个算子就给出对应阶段的 webui url，方便用户快捷跳转
+- [ ] 贴合初高中多学科教育核心素养，如果没有适配领域，要调用能联网搜索的 LLM 给出建议，并支持修改或完全用户自定义
