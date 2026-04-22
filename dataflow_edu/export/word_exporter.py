@@ -9,8 +9,9 @@
 - lang='zh'|'en'|'fr'：题目/答案/解析字段已在 data_loader 里 resolve 完毕，
   本模块只关心排版。
 
-中文字体在 docx 里非常坑：默认 Calibri 对中文不友好。这里强制 east-asia 字体为
-「宋体」，西文走默认；如果模板里设过样式，会被本模块的 set 覆盖。
+中文字体在 docx 里非常坑：默认 Calibri 对中文不友好。这里强制全文（中文 east-asia
++ 西文 ascii/hAnsi）统一为「微软雅黑」，并同步覆盖 Title / Heading 1~3 等内置样式，
+保证 docx 与下游 LibreOffice 转出的 PDF 字体一致。
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from docx import Document
 from docx.document import Document as DocxDocument
 from docx.enum.text import WD_BREAK
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
@@ -70,21 +72,47 @@ _HEADINGS = {
 }
 
 
-def _set_east_asia_font(doc: DocxDocument, font_name: str = "宋体") -> None:
-    """把 Normal 样式的 east-asia 字体设为指定中文字体。"""
+DEFAULT_FONT = "微软雅黑"
 
-    style = doc.styles["Normal"]
+# 需要统一字体的内置样式（Title 是封面大标题；Heading 1~3 是章节）
+_STYLES_TO_UNIFY = ("Normal", "Title", "Heading 1", "Heading 2", "Heading 3")
+
+
+def _force_style_font(doc: DocxDocument, style_name: str, font_name: str) -> None:
+    """把指定样式的中英文字体都改成 font_name。
+
+    重点坑：python-docx 默认模板里 Title / Heading 1~3 的 rFonts 用的是
+    **主题字体引用**（`asciiTheme="majorHAnsi"` / `eastAsiaTheme="majorEastAsia"` 等）。
+    OOXML 里 `*Theme` 优先级高于具体名，不清掉它们，写多少具体字体名都没用——
+    渲染器会去 theme1.xml 查主题字体，默认主题里 `majorEastAsia` 没设中文字体，
+    Windows 上就会回落到 MS Gothic / MS Mincho。
+    所以这里：1) 先删 4 个 *Theme 属性；2) 再写 4 个具体 slot。
+    """
+
+    try:
+        style = doc.styles[style_name]
+    except KeyError:
+        return
     rPr = style.element.get_or_add_rPr()
     rFonts = rPr.find(qn("w:rFonts"))
     if rFonts is None:
-        from docx.oxml import OxmlElement
-
         rFonts = OxmlElement("w:rFonts")
         rPr.append(rFonts)
-    rFonts.set(qn("w:eastAsia"), font_name)
-    rFonts.set(qn("w:hAnsi"), "Calibri")
-    rFonts.set(qn("w:ascii"), "Calibri")
-    style.font.size = Pt(11)
+    for attr in ("w:asciiTheme", "w:hAnsiTheme", "w:eastAsiaTheme", "w:cstheme"):
+        if rFonts.get(qn(attr)) is not None:
+            del rFonts.attrib[qn(attr)]
+    for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        rFonts.set(qn(attr), font_name)
+    # python-docx 的 style.font.name 只会写 ascii / hAnsi，这里补一刀方便后续读取
+    style.font.name = font_name
+
+
+def _set_east_asia_font(doc: DocxDocument, font_name: str = DEFAULT_FONT) -> None:
+    """把所有相关样式的中英文字体统一为 font_name（默认微软雅黑）。"""
+
+    for style_name in _STYLES_TO_UNIFY:
+        _force_style_font(doc, style_name, font_name)
+    doc.styles["Normal"].font.size = Pt(11)
 
 
 def _grouped(records: List[QuestionRecord]) -> List[Tuple[str, List[Tuple[str, List[Tuple[str, List[Tuple[int, QuestionRecord]]]]]]]]:
