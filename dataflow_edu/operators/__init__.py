@@ -5,6 +5,7 @@ DataFlow-EDU operators
 from dataflow_edu.operators.ambiguity_cleaning_operator import AmbiguityCleaningOperator
 from dataflow_edu.operators.ambiguity_refinement_operator import AmbiguityRefinementOperator
 from dataflow_edu.operators.balancing_operator import BalancingOperator
+from dataflow_edu.operators.competency_suggest_operator import CompetencySuggestOperator
 from dataflow_edu.operators.deduplication_operator import DeduplicationOperator
 from dataflow_edu.operators.execute_operator import ExecuteOperator
 from dataflow_edu.operators.judge_operator import JudgeOperator
@@ -20,6 +21,7 @@ __all__ = [
     "AmbiguityCleaningOperator",
     "AmbiguityRefinementOperator",
     "BalancingOperator",
+    "CompetencySuggestOperator",
     "DeduplicationOperator",
     "ExecuteOperator",
     "JudgeOperator",

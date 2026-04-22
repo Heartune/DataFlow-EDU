@@ -1,52 +1,58 @@
+import { api } from '@/api/client';
 import type { EduConfig } from '@/types/config';
 
-export async function getConfig(): Promise<EduConfig> {
-  const res = await fetch('/api/config');
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || res.statusText || '配置加载失败');
-  }
-  const raw = await res.json();
+function unwrapEduConfig(raw: any): EduConfig {
   return {
-    taxonomy: raw.taxonomy || [],
-    question_types: raw.question_types || [],
-    ability_levels: raw.ability_levels || [],
-    operators: raw.operators || {},
+    taxonomy: raw?.taxonomy || [],
+    question_types: raw?.question_types || [],
+    ability_levels: raw?.ability_levels || [],
+    operators: raw?.operators || {},
   };
+}
+
+function extractError(err: any, fallback: string): Error {
+  const data = err?.response?.data;
+  const msg = data?.error || data?.errors?.[0] || err?.message || fallback;
+  return new Error(msg);
+}
+
+export async function getConfig(): Promise<EduConfig> {
+  try {
+    const { data } = await api.get('/admin/config');
+    return unwrapEduConfig(data);
+  } catch (err) {
+    throw extractError(err, '配置加载失败');
+  }
 }
 
 export async function saveConfig(
   config: EduConfig
 ): Promise<{ ok: boolean; errors?: string[] }> {
-  const res = await fetch('/api/config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (res.ok && data.ok) return { ok: true };
-  return { ok: false, errors: data.errors || [data.error || '保存失败'] };
+  try {
+    const { data } = await api.put('/admin/config', config);
+    if (data?.ok) return { ok: true };
+    return { ok: false, errors: data?.errors || ['保存失败'] };
+  } catch (err: any) {
+    const data = err?.response?.data;
+    if (data?.errors) return { ok: false, errors: data.errors };
+    return { ok: false, errors: [data?.error || err?.message || '保存失败'] };
+  }
 }
 
 export async function listPresets(): Promise<string[]> {
-  const res = await fetch('/api/config/presets');
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const { data } = await api.get('/config/presets');
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function loadPreset(name: string): Promise<EduConfig> {
-  const res = await fetch(`/api/config/presets/${encodeURIComponent(name)}`, {
-    method: 'POST',
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || res.statusText || '加载预设失败');
+  try {
+    const { data } = await api.post(`/admin/config/presets/${encodeURIComponent(name)}`);
+    return unwrapEduConfig(data);
+  } catch (err) {
+    throw extractError(err, '加载预设失败');
   }
-  const raw = await res.json();
-  return {
-    taxonomy: raw.taxonomy || [],
-    question_types: raw.question_types || [],
-    ability_levels: raw.ability_levels || [],
-    operators: raw.operators || {},
-  };
 }

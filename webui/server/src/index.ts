@@ -4,11 +4,12 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dataRoutes } from './routes/data.js';
-import { configRoutes } from './routes/config.js';
+import { configRoutes, presetReaderRoutes } from './routes/config.js';
 import { pipelineRoutes } from './routes/pipeline.js';
 import { authRoutes } from './routes/auth.js';
 import { tasksRoutes, reconcileOrphanedRunningTasks } from './routes/tasks.js';
-import { requireAuth } from './middleware/auth.js';
+import { competencyRoutes } from './routes/competency.js';
+import { requireAuth, requireAdmin } from './middleware/auth.js';
 import { getDb, cleanupExpiredExports } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,9 +46,16 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/auth', authRoutes());
 app.use('/api/tasks', requireAuth, tasksRoutes(projectRoot));
 
-app.use('/api', dataRoutes(projectRoot));
-app.use('/api', configRoutes(projectRoot));
-app.use('/api', pipelineRoutes());
+// 教师端 / 通用：preset 只读接口（WizardView 第 1 步必用）
+app.use('/api', requireAuth, presetReaderRoutes(projectRoot));
+
+// 联网素养建议：BYOK + 滑动窗口限流
+app.use('/api/competency', requireAuth, competencyRoutes(projectRoot));
+
+// 管理员看板专用：写全局配置 / 读历史 stage 数据 / pipeline 控制
+app.use('/api/admin', requireAuth, requireAdmin, dataRoutes(projectRoot));
+app.use('/api/admin', requireAuth, requireAdmin, configRoutes(projectRoot));
+app.use('/api/admin', requireAuth, requireAdmin, pipelineRoutes());
 
 if (process.env.NODE_ENV !== 'production') {
   app.get('/', (_, res) => {

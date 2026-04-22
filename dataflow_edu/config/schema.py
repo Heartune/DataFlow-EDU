@@ -191,6 +191,20 @@ class JudgeConfig:
 
 
 @dataclass
+class CompetencySuggestConfig:
+    """Competency Suggest Operator 参数：联网检索核心素养建议。
+
+    走 ``serving/web_search_llm.py`` 复用 ``LLM_PROVIDERS["zgca"]``，
+    仅在「学科 + 教材 + 教师个性化需求」三者均给定时被 WebUI 调用。
+    """
+
+    zgca_model: str = "Gemini-3.0-Flash"
+    max_tokens: int = 2048
+    temperature: float = 0.3
+    needs_max_chars: int = 500
+
+
+@dataclass
 class EduConfig:
     """DataFlow-EDU 完整配置。
 
@@ -268,5 +282,6 @@ def default_config() -> EduConfig:
             "mcq_verify": MCQVerifyConfig(),
             "execute": ExecuteConfig(),
             "judge": JudgeConfig(),
+            "competency_suggest": CompetencySuggestConfig(),
         },
     )

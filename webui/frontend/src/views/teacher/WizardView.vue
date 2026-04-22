@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 
@@ -10,6 +10,7 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const COMPETENCY_CACHE_KEY = 'edu_competency_suggest_cache_v1';
 
 interface AbilityLevel {
   name: string;
@@ -170,6 +171,172 @@ function skip() {
 
 function removeAbility(idx: number) {
   abilityLevels.value.splice(idx, 1);
+}
+
+// ============== 联网素养建议 ==============
+interface SuggestItem {
+  name: string;
+  dimension?: string;
+  description?: string;
+  source_url?: string;
+  _checked?: boolean;
+}
+
+const suggestOpen = ref(false);
+const suggestNeeds = ref('');
+const suggestLoading = ref(false);
+const suggestError = ref('');
+const suggestItems = ref<SuggestItem[]>([]);
+const NEEDS_MAX = 500;
+const suggestState = reactive({ source: '' as 'cache' | 'live' | '' });
+
+function suggestCacheKey(subject: string, book: string, needs: string): string {
+  // 简易 cache key：subject|book|trim+lower(needs)，避免引入额外依赖
+  return [subject, book, needs.replace(/\s+/g, ' ').trim().toLowerCase()].join('||');
+}
+
+function readSuggestCache(key: string): SuggestItem[] | null {
+  try {
+    const raw = localStorage.getItem(COMPETENCY_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw) as Record<string, { items: SuggestItem[]; ts: number }>;
+    const hit = obj[key];
+    if (!hit || !Array.isArray(hit.items)) return null;
+    // 24h TTL
+    if (Date.now() - hit.ts > 24 * 60 * 60 * 1000) return null;
+    return hit.items;
+  } catch {
+    return null;
+  }
+}
+
+function writeSuggestCache(key: string, items: SuggestItem[]) {
+  try {
+    const raw = localStorage.getItem(COMPETENCY_CACHE_KEY);
+    const obj = raw ? (JSON.parse(raw) as Record<string, { items: SuggestItem[]; ts: number }>) : {};
+    obj[key] = { items, ts: Date.now() };
+    // 限制最多保留 16 条
+    const keys = Object.keys(obj);
+    if (keys.length > 16) {
+      keys
+        .map((k) => ({ k, ts: obj[k].ts }))
+        .sort((a, b) => a.ts - b.ts)
+        .slice(0, keys.length - 16)
+        .forEach((it) => delete obj[it.k]);
+    }
+    localStorage.setItem(COMPETENCY_CACHE_KEY, JSON.stringify(obj));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function openSuggest() {
+  if (!selectedPreset.value) {
+    error.value = '请先在第 1 步选择学科';
+    step.value = 1;
+    return;
+  }
+  suggestOpen.value = true;
+  suggestError.value = '';
+  suggestItems.value = [];
+  suggestState.source = '';
+  suggestNeeds.value = '';
+}
+
+function closeSuggest() {
+  suggestOpen.value = false;
+  suggestLoading.value = false;
+}
+
+async function fetchSuggest() {
+  suggestError.value = '';
+  if (!props.taskName) {
+    suggestError.value = '当前任务缺少教材名，无法发起检索';
+    return;
+  }
+  if (suggestNeeds.value.length > NEEDS_MAX) {
+    suggestError.value = `个性化需求最长 ${NEEDS_MAX} 字`;
+    return;
+  }
+  const subject = selectedPreset.value;
+  const book = props.taskName;
+  const needs = suggestNeeds.value.trim();
+  const key = suggestCacheKey(subject, book, needs);
+  const cached = readSuggestCache(key);
+  if (cached && cached.length) {
+    suggestItems.value = cached.map((it) => ({ ...it, _checked: true }));
+    suggestState.source = 'cache';
+    return;
+  }
+  suggestLoading.value = true;
+  try {
+    const { data } = await api.post('/competency/suggest', {
+      subject,
+      book,
+      needs,
+    });
+    const items = Array.isArray(data?.competencies) ? (data.competencies as SuggestItem[]) : [];
+    if (!items.length) {
+      suggestError.value = '联网模型未返回有效建议，请稍后重试或缩短个性化需求';
+      return;
+    }
+    suggestItems.value = items.map((it) => ({ ...it, _checked: true }));
+    suggestState.source = 'live';
+    writeSuggestCache(key, items);
+  } catch (err: any) {
+    const code = err?.response?.data?.error;
+    const msg = err?.response?.data?.message;
+    if (code === 'missing_llm_key') {
+      suggestError.value = '本地未保存 LLM Key，请回到「新建任务」页填写后重试';
+    } else if (code === 'rate_limited') {
+      suggestError.value = msg || '调用过于频繁，请稍后再试';
+    } else if (code === 'needs_too_long') {
+      suggestError.value = msg || `个性化需求最长 ${NEEDS_MAX} 字`;
+    } else if (err?.response?.status === 504) {
+      suggestError.value = '联网 LLM 调用超时（30s），请稍后再试';
+    } else {
+      suggestError.value = msg || code || err?.message || '联网建议失败';
+    }
+  } finally {
+    suggestLoading.value = false;
+  }
+}
+
+function applySelectedSuggestions() {
+  const picked = suggestItems.value.filter((it) => it._checked);
+  if (!picked.length) {
+    closeSuggest();
+    return;
+  }
+  // 合并策略：按 dimension 聚合到 abilityLevels；同 dimension 已存在则把 name 加到 sublevels（去重）
+  const dimMap = new Map<string, AbilityLevel>();
+  for (const lv of abilityLevels.value) {
+    if (lv.name) dimMap.set(lv.name, lv);
+  }
+  for (const it of picked) {
+    const dim = (it.dimension || '其它素养').trim();
+    const subName = (it.name || '').trim();
+    if (!subName) continue;
+    let target = dimMap.get(dim);
+    if (!target) {
+      target = {
+        name: dim,
+        weight: 0.25,
+        description: it.description || '',
+        sublevels: [],
+      };
+      abilityLevels.value.push(target);
+      dimMap.set(dim, target);
+    }
+    const subs = target.sublevels || (target.sublevels = []);
+    if (!subs.includes(subName)) subs.push(subName);
+    if (!target.description && it.description) {
+      target.description = it.description;
+    }
+  }
+  info.value = `已合并 ${picked.length} 条联网素养建议`;
+  setTimeout(() => (info.value = ''), 3000);
+  closeSuggest();
 }
 function removeQT(idx: number) {
   questionTypes.value.splice(idx, 1);
@@ -340,7 +507,18 @@ onMounted(async () => {
 
       <!-- Step 2: Ability levels -->
       <section v-else-if="step === 2">
-        <h2 class="text-lg font-semibold text-slate-900 mb-1">第 2 步 · 核心素养</h2>
+        <div class="flex items-start justify-between gap-3 mb-1">
+          <h2 class="text-lg font-semibold text-slate-900">第 2 步 · 核心素养</h2>
+          <button
+            v-if="!readonly"
+            type="button"
+            class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:border-slate-900 hover:bg-slate-50"
+            title="联网检索权威课程标准，给当前学科 + 教材生成结构化素养候选"
+            @click="openSuggest"
+          >
+            联网建议（找不到匹配）
+          </button>
+        </div>
         <p class="text-sm text-slate-500 mb-4">
           决定题目的认知层级分布。权重为相对值，无需必须等于 1（合计 {{ sumAbility.toFixed(2) }}）。
         </p>
@@ -490,6 +668,114 @@ onMounted(async () => {
           </div>
         </div>
       </section>
+
+      <!-- 联网素养建议弹窗 -->
+      <div
+        v-if="suggestOpen"
+        class="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
+        @click.self="closeSuggest"
+      >
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+          <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div>
+              <h3 class="text-base font-semibold text-slate-900">联网检索核心素养</h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                学科：{{ selectedPreset || '(未选择)' }} · 教材：{{ taskName || '(无)' }}
+              </p>
+            </div>
+            <button
+              class="text-slate-400 hover:text-slate-700 text-xl leading-none"
+              @click="closeSuggest"
+              aria-label="close"
+            >
+              ×
+            </button>
+          </div>
+          <div class="px-5 py-4 space-y-3 overflow-auto">
+            <div>
+              <label class="text-xs text-slate-600 mb-1 block">
+                教师个性化需求（可选，<span :class="suggestNeeds.length > NEEDS_MAX ? 'text-rose-600' : ''">{{ suggestNeeds.length }}/{{ NEEDS_MAX }}</span>）
+              </label>
+              <textarea
+                v-model="suggestNeeds"
+                :maxlength="NEEDS_MAX"
+                rows="3"
+                placeholder="例如：希望聚焦实验探究与跨学科应用，淡化纯记忆性内容"
+                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
+                :disabled="suggestLoading"
+                @click="fetchSuggest"
+              >
+                {{ suggestLoading ? '检索中...' : '开始检索' }}
+              </button>
+              <span v-if="suggestState.source === 'cache'" class="text-xs text-emerald-600">
+                来自本地缓存（24h 内同参数复用）
+              </span>
+              <span v-if="suggestState.source === 'live'" class="text-xs text-slate-500">
+                来自联网检索
+              </span>
+            </div>
+            <p v-if="suggestError" class="text-sm text-rose-600">{{ suggestError }}</p>
+            <div v-if="suggestItems.length" class="space-y-2">
+              <div class="flex items-center justify-between text-xs text-slate-500">
+                <span>共 {{ suggestItems.length }} 条建议（可勾选）</span>
+                <button
+                  class="hover:underline"
+                  @click="suggestItems.forEach((it) => (it._checked = !suggestItems.every((x) => x._checked)))"
+                >
+                  全选 / 全不选
+                </button>
+              </div>
+              <div
+                v-for="(it, i) in suggestItems"
+                :key="i"
+                class="border border-slate-200 rounded-xl p-3 hover:border-slate-400"
+              >
+                <label class="flex items-start gap-3 cursor-pointer">
+                  <input v-model="it._checked" type="checkbox" class="mt-1" />
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-baseline gap-2 flex-wrap">
+                      <span class="text-sm font-medium text-slate-900">{{ it.name }}</span>
+                      <span v-if="it.dimension" class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                        {{ it.dimension }}
+                      </span>
+                    </div>
+                    <p v-if="it.description" class="text-xs text-slate-600 mt-1">{{ it.description }}</p>
+                    <a
+                      v-if="it.source_url"
+                      :href="it.source_url"
+                      target="_blank"
+                      rel="noopener"
+                      class="text-xs text-slate-500 hover:text-slate-900 underline mt-1 inline-block break-all"
+                    >
+                      {{ it.source_url }}
+                    </a>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+            <button
+              class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-600 hover:border-slate-900"
+              @click="closeSuggest"
+            >
+              取消
+            </button>
+            <button
+              class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
+              :disabled="!suggestItems.some((it) => it._checked)"
+              @click="applySelectedSuggestions"
+            >
+              应用所选项
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div class="mt-6 flex items-center justify-between gap-2 flex-wrap">
         <button
