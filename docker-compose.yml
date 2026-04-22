@@ -1,0 +1,41 @@
+# DataFlow-EDU 单机生产部署（本地 / 阿里云服务器通用）：双容器 + 共享数据卷。
+# - worker：Express + Python 同住，跑后端 API、SSE、教师端任务子进程链路。
+# - web：Nginx 仅 serve 前端 dist + 反代 /api/ 到 worker:3000。
+# - 两个 named volume 分别挂到 SQLite (webui/server/data) 与
+#   用户任务产物 (dataflow_edu/data/users)，备份/快照一并走。
+
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    image: dataflow-edu-worker:latest
+    restart: unless-stopped
+    env_file:
+      - webui/server/.env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    volumes:
+      - appdata-users:/app/dataflow_edu/data/users
+      - appdata-sqlite:/app/webui/server/data
+    expose:
+      - "3000"
+    # 仅在本地 dev 想直连 worker 时启用 ports：
+    # ports:
+    #   - "3000:3000"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: dataflow-edu-web:latest
+    restart: unless-stopped
+    depends_on:
+      - worker
+    ports:
+      - "8080:80"
+
+volumes:
+  appdata-users:
+  appdata-sqlite:

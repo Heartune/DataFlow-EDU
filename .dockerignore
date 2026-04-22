@@ -1,0 +1,48 @@
+# 镜像构建无关或敏感文件，避免污染镜像 / 增大体积
+.git/
+.github/
+.cursor/
+.vscode/
+.idea/
+
+# Python 缓存
+**/__pycache__/
+**/*.py[cod]
+**/*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+**/node_modules/
+**/dist/
+!webui/frontend/dist/
+
+# 大文件 / 用户数据
+dataflow_edu/data/users/
+dataflow_edu/data/resources/**/*.pdf
+dataflow_edu/data/resources/**/img/
+
+# 含敏感信息的工具目录（镜像里走 stub）
+utils_from_CNLaw-Bench/
+utils_from_ROBOTheory/
+
+# 本地配置
+.env
+.env.*
+**/.env
+**/.env.*
+.llm_config.json
+**/.llm_config.json
+
+# 日志
+*.log
+logs/
+runner.log
+
+# 文档/计划
+plan.md
+agent_notes.md
+CHANGELOG.md
+slide-deck/

@@ -1,0 +1,111 @@
+# syntax=docker/dockerfile:1.7
+
+# -------- worker 容器：Python 3.13 + Node 20 同住 --------
+# 作用：跑 Express (webui/server) + 通过 child_process.spawn 拉起
+# python -m dataflow_edu.task_runner / dataflow_edu.competency_suggest
+# 等子进程，实现教师端任务执行链路。
+#
+# 设计说明（与 agent_notes.md「Docker 部署」一致）：
+# - 不打包本地 OCR (mineru / torch / modelscope)，OCR 仅 remote 模式可用
+#   或在镜像内被 stub 替代，启动时不报错、调用时显式拒绝。
+# - 不打包 DataFlow/requirements.txt 的全套依赖（torch/transformers 几个 G），
+#   而是把 DataFlow/dataflow/__init__.py 改成最小导出版（只 get_logger + 注册中心），
+#   避免拉起整个算子库导致镜像膨胀。
+# - 字体：装 fonts-noto-cjk + fonts-wqy-microhei（Linux 下接近「微软雅黑」字形），
+#   docx 模板里写的是「微软雅黑」具体字体名，缺字时 LibreOffice 会按字体替换链
+#   回落到 noto / wqy，效果近似。
+
+FROM python:3.13-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=utf-8 \
+    PYTHONUTF8=1 \
+    PYTHON_BIN=python \
+    PYTHONPATH=/app/DataFlow:/app \
+    NODE_ENV=production \
+    DATAFLOW_NONINTERACTIVE=1 \
+    PORT=3000
+
+# ---- 系统依赖：LibreOffice + CJK 字体 + 编译工具 + Node 20 ----
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg \
+        build-essential \
+        libreoffice-core libreoffice-writer \
+        fonts-noto-cjk fonts-wqy-microhei fonts-wqy-zenhei \
+        poppler-utils \
+        libpng16-16 libjpeg62-turbo zlib1g; \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -; \
+    apt-get install -y --no-install-recommends nodejs; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ---- Python 依赖（先拷 requirements 利用层缓存）----
+COPY requirements-cloud.txt /tmp/requirements-cloud.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r /tmp/requirements-cloud.txt
+
+# ---- 拷整个仓库（.dockerignore 已排除 node_modules / data/users / utils_from_CNLaw-Bench 等）----
+COPY . /app
+
+# ---- patch DataFlow/dataflow/__init__.py：仅暴露 get_logger / 注册中心，
+#      不导入 .operators 与 .prompts，避免拉入 torch / transformers / etc. ----
+RUN cat > /app/DataFlow/dataflow/__init__.py <<'PYEOF'
+"""Cloud-slim shim of dataflow package.
+
+仅保留 dataflow_edu 必需的导出（get_logger / 版本号 / 注册中心）。
+不导入 .operators / .prompts，避免引入 torch / transformers 等重依赖。
+详见 agent_notes.md 「Docker 部署」一节。
+"""
+from .utils import *  # noqa: F401,F403
+from .version import __version__, version_info  # noqa: F401
+from .logger import get_logger  # noqa: F401
+
+__all__ = ['__version__', 'version_info', 'get_logger']
+
+
+def hello():
+    return "Hello from open-dataflow (cloud-slim)!"
+PYEOF
+
+# ---- mineru_ocr stub：让 dataflow_edu/operators/__init__.py 顶层 import 不挂 ----
+RUN mkdir -p /app/utils_from_CNLaw-Bench && \
+    cat > /app/utils_from_CNLaw-Bench/mineru_ocr.py <<'PYEOF'
+"""Cloud stub for mineru_ocr.
+
+云端镜像不打包真正的 MinerU 客户端（依赖较重，且需要 .env 中 MinerU API Key）。
+import 此模块本身不报错，但任何调用都立即抛出 CloudOcrUnavailable，
+让 task_runner OCR 阶段以可读的错误失败，而不是 ImportError 把整个进程拖崩。
+详见 agent_notes.md「Docker 部署」一节。
+"""
+
+
+class CloudOcrUnavailable(RuntimeError):
+    pass
+
+
+def __getattr__(name):  # PEP 562
+    raise CloudOcrUnavailable(
+        f"mineru_ocr.{name} 在云端镜像中不可用：请改用 MinerU remote API 模式，"
+        "或在本地完成 OCR 后再上传 markdown 给云端。"
+    )
+PYEOF
+
+# ---- 构建后端 TS ----
+RUN cd /app/webui/server && npm ci --no-audit --no-fund && npm run build && \
+    npm prune --omit=dev
+
+# ---- 构建前端 dist（让 Express 在 NODE_ENV=production 下走 SPA fallback）----
+RUN cd /app/webui/frontend && npm ci --no-audit --no-fund && npm run build && \
+    rm -rf node_modules
+
+# ---- 数据目录占位（docker-compose 的 named volume 会挂载到这里）----
+RUN mkdir -p /app/dataflow_edu/data/users /app/webui/server/data
+
+EXPOSE 3000
+
+# Express 在 NODE_ENV=production 下自带 SPA fallback（webui/server/src/index.ts:75-81）
+CMD ["node", "/app/webui/server/dist/index.js"]

@@ -1,0 +1,34 @@
+# Cloud (docker-compose worker) 专用最小依赖。
+# 与 DataFlow/requirements.txt 不同：不安装 torch / transformers / modelscope / mineru 等
+# 重资源依赖，因为云端镜像不跑本地 OCR / 不跑预训练模型。
+# 详见 agent_notes.md「Docker 部署」一节。
+
+# ---- LLM / HTTP ----
+openai>=1.50.0
+httpx>=0.27.0
+requests>=2.32.0
+
+# ---- 配置 / 数据 ----
+pyyaml>=6.0
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+
+# ---- DataFlow 核心 / 注册中心 / logger 依赖 ----
+colorlog
+appdirs
+addict
+rich
+docstring_parser
+pydantic>=2
+
+# ---- 数据处理 / 去重 ----
+pandas>=2.0.0
+numpy<2.0.0
+datasketch>=1.6.0
+
+# ---- 文档导出 ----
+python-docx>=1.1.0
+
+# ---- PDF 工具（仅 Pillow + pdf2image，不要 mineru）----
+Pillow>=10.0.0
+pdf2image>=1.17.0
