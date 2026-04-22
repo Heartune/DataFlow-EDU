@@ -12,6 +12,9 @@ tracked_files.tmp
 *.env.local
 *.env.development
 *.env.production
+# 例外：.env.example 是占位模板（无凭据），需入库给其他人 cp 用
+!.env.example
+!**/.env.example
 
 # ===== LLM / MinerU 等运行时配置（含敏感信息）=====
 .llm_config.json
