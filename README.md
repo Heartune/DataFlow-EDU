@@ -203,31 +203,8 @@ DataFlow-EDU/
 - [ ] 优化终端与 webui 的联动，比如 webui 实时监控生成情况并同步，或终端每完成一个算子就给出对应阶段的 webui url，方便用户快捷跳转
 - [x] 贴合初高中多学科教育核心素养，如果没有适配领域，要调用能联网搜索的 LLM 给出建议，并支持修改或完全用户自定义（已通过 `CompetencySuggestOperator` + `POST /api/competency/suggest` + WizardView 第 2 步「联网建议」按钮实现）
 
----
-
-## 云端部署（阿里云服务器 + docker-compose）
-
-DataFlow-EDU 唯一部署链路：双容器 docker-compose（web Nginx + worker Express + Python），本地 dev、阿里云 / 腾讯云 / 自购服务器通用。
-
-### 架构
-
-```mermaid
-flowchart LR
-  user((教师浏览器)) -->|HTTPS| caddy[Caddy / Nginx 网关\n域名 + 自动 HTTPS]
-  caddy --> web[web 容器\nNginx serve dist]
-  web -->|reverse proxy /api| worker[worker 容器\nExpress + Python]
-  worker --- volU[(appdata-users\n教材+题库产物)]
-  worker --- volS[(appdata-sqlite\n账号+任务元数据)]
 ```
 
-### 服务器规格建议
-
-| 用途 | CPU | 内存 | 磁盘 | 备注 |
-| --- | --- | --- | --- | --- |
-| 内测 / 5 教师 | 2 核 | 4 GB | 40 GB | 阿里云轻量 ¥60/月 起即可 |
-| 试点 / 20 教师 | 4 核 | 8 GB | 100 GB | 同时跑 3-5 个生成任务 |
-
-操作系统选 **Ubuntu 22.04 LTS**（其他发行版命令略有差异）。安全组放通 `22 / 80 / 443`。
 
 ### 一键部署 Quick Start（Ubuntu 22.04）
 
@@ -249,7 +226,9 @@ nano webui/server/.env
 #   LLM_ZGCA_API_KEY=<zgca BYOK key，可选；教师也可在 UI 自带 key>
 
 # 4) 构建镜像 & 后台启动
-docker compose build
+#    国内服务器首构建慢的话，开 BuildKit + 镜像源（Dockerfile 已内置清华 apt/PyPI / 淘宝 npm 镜像，
+#    并用 cache mount 缓存 apt/pip/npm 下载，二次构建会非常快）
+DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose build --progress=plain
 docker compose up -d
 
 # 5) 验证
@@ -297,15 +276,3 @@ git pull
 docker compose build
 docker compose up -d                       # named volume 不会被销毁，数据安全
 ```
-
-### 能力清单
-
-| 能力 | 本地 conda | docker-compose（含阿里云） |
-| --- | --- | --- |
-| LLM 生成 / 清洗 / 验证 | ✓ | ✓ |
-| 联网素养建议（zgca） | ✓ | ✓ |
-| MinerU **本地** OCR | ✓ | ✗（走 stub） |
-| MinerU **remote** OCR | ✓（需 .env） | ✓（需 .env） |
-| Word / PDF 导出（含 CJK 字体） | ✓（需装微软雅黑） | ✓（noto/wqy 替代） |
-
-云端镜像不打包 torch / transformers / mineru 本地模型包，构建产物 ~1.5 GB。详见 [agent_notes.md](agent_notes.md) 「Docker 部署」一节。
