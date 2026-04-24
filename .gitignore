@@ -110,8 +110,9 @@ webui/server/dist/
 # ===== 多用户任务工作目录 =====
 dataflow_edu/data/users/
 
-# ===== 含敏感信息的工具目录 =====
+# ===== 含敏感信息的工具目录（仅允许轻量 remote mineru_ocr.py，其余忽略）=====
 utils_from_CNLaw-Bench/
+!utils_from_CNLaw-Bench/mineru_ocr.py
 utils_from_ROBOTheory/
 
 # ===== 临时 / 评估 scratch 目录 =====

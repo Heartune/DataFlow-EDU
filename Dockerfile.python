@@ -26,27 +26,58 @@ ENV PYTHONUNBUFFERED=1 \
     DATAFLOW_NONINTERACTIVE=1 \
     PORT=3000
 
-# ---- 系统依赖：LibreOffice + CJK 字体 + 编译工具 + Node 20 ----
+# ---- 切换 apt 源到清华镜像（trixie / Debian 13），大幅加速国内构建 ----
 RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g; s|http://security.debian.org|https://mirrors.tuna.tsinghua.edu.cn/debian-security|g' /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    if [ -f /etc/apt/sources.list ]; then \
+        sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g; s|http://security.debian.org|https://mirrors.tuna.tsinghua.edu.cn/debian-security|g' /etc/apt/sources.list; \
+    fi
+
+# ---- 系统依赖：LibreOffice + CJK 字体 + 编译工具（Node 单独装，见下一层）----
+# 用 BuildKit cache mount 缓存 apt 下载产物（跨构建复用，省掉重复拉包）
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    set -eux; \
+    rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg \
+        ca-certificates curl gnupg xz-utils \
         build-essential \
         libreoffice-core libreoffice-writer \
         fonts-noto-cjk fonts-wqy-microhei fonts-wqy-zenhei \
         poppler-utils \
-        libpng16-16 libjpeg62-turbo zlib1g; \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -; \
-    apt-get install -y --no-install-recommends nodejs; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+        libpng16-16 libjpeg62-turbo zlib1g
+
+# ---- Node 20：直接从清华 nodejs-release 拉官方 tar.xz 解压到 /usr/local ----
+# 不走 NodeSource：那边 setup 脚本国内常拉空 + 清华没镜像 nodesource deb 仓库，
+# 静默失败后会回落到 Debian 自带 nodejs（不带 npm）→ 后续 npm ci 直接 not found。
+# 这里改成下 prebuilt tar.xz，node / npm / npx 一并到位，不依赖任何 apt 源。
+ARG NODE_VERSION=20.18.1
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) NODE_ARCH=x64 ;; \
+        arm64) NODE_ARCH=arm64 ;; \
+        *) echo "Unsupported TARGETARCH: ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    NODE_PKG="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"; \
+    curl -fsSLO "https://mirrors.tuna.tsinghua.edu.cn/nodejs-release/v${NODE_VERSION}/${NODE_PKG}"; \
+    tar -xJf "${NODE_PKG}" -C /usr/local --strip-components=1 \
+        --exclude CHANGELOG.md --exclude LICENSE --exclude README.md; \
+    rm -f "${NODE_PKG}"; \
+    node --version; \
+    npm --version
 
 WORKDIR /app
 
-# ---- Python 依赖（先拷 requirements 利用层缓存）----
+# ---- Python 依赖（先拷 requirements 利用层缓存 + pip 缓存 mount + 清华 PyPI）----
 COPY requirements-cloud.txt /tmp/requirements-cloud.txt
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r /tmp/requirements-cloud.txt
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install --upgrade pip && \
+    pip install -r /tmp/requirements-cloud.txt
 
 # ---- 拷整个仓库（.dockerignore 已排除 node_modules / data/users / utils_from_CNLaw-Bench 等）----
 COPY . /app
@@ -71,35 +102,25 @@ def hello():
     return "Hello from open-dataflow (cloud-slim)!"
 PYEOF
 
-# ---- mineru_ocr stub：让 dataflow_edu/operators/__init__.py 顶层 import 不挂 ----
-RUN mkdir -p /app/utils_from_CNLaw-Bench && \
-    cat > /app/utils_from_CNLaw-Bench/mineru_ocr.py <<'PYEOF'
-"""Cloud stub for mineru_ocr.
+# utils_from_CNLaw-Bench/mineru_ocr.py 由 .dockerignore ! 规则 + COPY 带入真实 remote 实现
+# (见 agent_notes.md 「MinerU OCR」节)，不再写 stub。
 
-云端镜像不打包真正的 MinerU 客户端（依赖较重，且需要 .env 中 MinerU API Key）。
-import 此模块本身不报错，但任何调用都立即抛出 CloudOcrUnavailable，
-让 task_runner OCR 阶段以可读的错误失败，而不是 ImportError 把整个进程拖崩。
-详见 agent_notes.md「Docker 部署」一节。
-"""
-
-
-class CloudOcrUnavailable(RuntimeError):
-    pass
-
-
-def __getattr__(name):  # PEP 562
-    raise CloudOcrUnavailable(
-        f"mineru_ocr.{name} 在云端镜像中不可用：请改用 MinerU remote API 模式，"
-        "或在本地完成 OCR 后再上传 markdown 给云端。"
-    )
-PYEOF
-
-# ---- 构建后端 TS ----
-RUN cd /app/webui/server && npm ci --no-audit --no-fund && npm run build && \
+# ---- 构建后端 TS（用淘宝 npm 镜像 + npm 缓存 mount）----
+# 注意 --include=dev：本镜像顶层 ENV NODE_ENV=production，npm ci 默认会跳过
+# devDependencies，但 typescript / tsx / @types/* 都在 devDeps 里，不装就编不了。
+# 编完用 npm prune --omit=dev 把 devDeps 清掉，最终运行时镜像不带 ts 工具链。
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm config set registry https://registry.npmmirror.com && \
+    cd /app/webui/server && npm ci --include=dev --no-audit --no-fund && \
+    npm run build && \
     npm prune --omit=dev
 
 # ---- 构建前端 dist（让 Express 在 NODE_ENV=production 下走 SPA fallback）----
-RUN cd /app/webui/frontend && npm ci --no-audit --no-fund && npm run build && \
+# 同样需要 --include=dev：vite / typescript 等构建工具都在 devDependencies。
+# 构建完直接 rm -rf node_modules，dist 由 Express 在 production 下静态托管。
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    cd /app/webui/frontend && npm ci --include=dev --no-audit --no-fund && \
+    npm run build && \
     rm -rf node_modules
 
 # ---- 数据目录占位（docker-compose 的 named volume 会挂载到这里）----

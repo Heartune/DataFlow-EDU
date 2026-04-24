@@ -24,8 +24,9 @@ dataflow_edu/data/users/
 dataflow_edu/data/resources/**/*.pdf
 dataflow_edu/data/resources/**/img/
 
-# 含敏感信息的工具目录（镜像里走 stub）
+# 含敏感信息的工具目录（镜像里走 stub）；仅允许轻量 remote mineru_ocr.py
 utils_from_CNLaw-Bench/
+!utils_from_CNLaw-Bench/mineru_ocr.py
 utils_from_ROBOTheory/
 
 # 本地配置

@@ -7,7 +7,9 @@ WORKDIR /build
 
 # 先拷 package 文件，最大化利用 npm 层缓存
 COPY webui/frontend/package.json webui/frontend/package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm config set registry https://registry.npmmirror.com && \
+    npm ci --no-audit --no-fund
 
 # 拷源码并 build
 COPY webui/frontend/ ./
