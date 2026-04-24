@@ -198,7 +198,7 @@ class CompetencySuggestConfig:
     仅在「学科 + 教材 + 教师个性化需求」三者均给定时被 WebUI 调用。
     """
 
-    zgca_model: str = "Gemini-3.0-Flash"
+    zgca_model: str = "gemini-3-flash-preview-nothinking"
     max_tokens: int = 2048
     temperature: float = 0.3
     needs_max_chars: int = 500

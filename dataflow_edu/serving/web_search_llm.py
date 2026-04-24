@@ -4,11 +4,11 @@
 
 设计要点（详见 agent_notes.md「联网 LLM 与素养建议」一节）：
 - 不引入 Tavily / Bing / SerpAPI 等外部检索 SDK，全部靠 zgca 上具备
-  原生联网能力的模型（如 Gemini-3.0-Flash / Pro）按 system prompt 自行检索。
+  原生联网能力的模型（如 gemini-3-flash-preview-nothinking / Pro 系）按 system prompt 自行检索。
 - API key 一律从环境变量 ``LLM_API_KEY`` 读取（与 ``task_runner`` 的 BYOK
   链路一致），不会触发交互式 ``interactive_config_llm``。
 - 模型选择优先级：函数入参 > ``.llm_config.json::llm_model_zgca`` > 内置默认
-  ``Gemini-3.0-Flash``。
+  ``gemini-3-flash-preview-nothinking``。
 
 stdout / stderr 协议：调用方（CLI / Operator）需自行序列化结果，本模块仅返回
 原始字符串（或 ``None``），与现有 ``call_llm`` 行为对齐。
@@ -27,7 +27,7 @@ from openai import OpenAI
 
 from dataflow_edu.serving.llm_client import LLM_PROVIDERS
 
-DEFAULT_MODEL = "Gemini-3.0-Flash"
+DEFAULT_MODEL = "gemini-3-flash-preview-nothinking"
 DEFAULT_TIMEOUT = 60
 DEFAULT_RETRIES = 2
 

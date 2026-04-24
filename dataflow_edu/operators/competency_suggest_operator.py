@@ -30,7 +30,7 @@ class CompetencySuggestOperator(OperatorABC):
 
     def __init__(
         self,
-        zgca_model: str = "Gemini-3.0-Flash",
+        zgca_model: str = "gemini-3-flash-preview-nothinking",
         max_tokens: int = 2048,
         temperature: float = 0.3,
         needs_max_chars: int = NEEDS_MAX_CHARS,

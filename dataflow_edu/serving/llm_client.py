@@ -181,7 +181,7 @@ LLM_PROVIDERS = {
 
 # Zaiwen 常用 LLM 模型列表（与 optimize_answers 中的 ZAIWEN_VLM_MODELS 对齐）
 ZAIWEN_LLM_MODELS = [
-    {"name": "Gemini-3.0-Flash", "in_k": 0.2, "out_k": 0.8},
+    {"name": "gemini-3-flash-preview-nothinking", "in_k": 0.2, "out_k": 0.8},
     {"name": "Gemini-3.0-Pro", "in_k": 0.1, "out_k": 0.4},
     {"name": "Gemini-3.0-Pro-Thinking", "in_k": 1, "out_k": 4},
     {"name": "gemini_2_5_flash", "in_k": 0.2, "out_k": 0.8},
@@ -343,7 +343,7 @@ def _manual_input_model(default_model: str | None, config_key: str) -> str:
     """手动输入模型名称"""
     while True:
         hint = f" (直接回车使用：{default_model})" if default_model else ""
-        model = input(f"\n请输入模型名称 (如 Gemini-3.0-Flash, gpt-4o){hint}: ").strip()
+        model = input(f"\n请输入模型名称 (如 gemini-3-flash-preview-nothinking, gpt-4o){hint}: ").strip()
         if not model and default_model:
             return default_model
         if model:
