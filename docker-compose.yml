@@ -24,6 +24,12 @@ services:
     # 仅在本地 dev 想直连 worker 时启用 ports：
     # ports:
     #   - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   web:
     build:
@@ -35,6 +41,24 @@ services:
       - worker
     ports:
       - "8080:80"
+
+  backup:
+    image: keinos/sqlite3:latest
+    restart: unless-stopped
+    depends_on:
+      - worker
+    volumes:
+      - appdata-sqlite:/app/webui/server/data
+      - ./scripts/backup.sh:/backup.sh:ro
+    # busybox crond：每天 03:00 执行备份脚本
+    # -f: 前台运行；-l 8: log level notice
+    entrypoint: >
+      sh -c "
+        chmod +x /backup.sh &&
+        mkdir -p /var/spool/cron/crontabs &&
+        echo '0 3 * * * /backup.sh >> /var/log/backup.log 2>&1' > /var/spool/cron/crontabs/root &&
+        crond -f -l 8
+      "
 
 volumes:
   appdata-users:
