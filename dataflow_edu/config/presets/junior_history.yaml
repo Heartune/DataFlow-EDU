@@ -1,0 +1,186 @@
+subject: 初中历史
+grade: 初中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+- name: 中国古代史
+  subcategories:
+  - 中华文明起源与早期国家
+  - 秦汉统一与大一统
+  - 三国至隋唐繁荣
+  - 宋元明清多民族政权
+- name: 中国近现代史
+  subcategories:
+  - 晚清侵略与近代化探索
+  - 辛亥革命与新民主主义革命
+  - 中华人民共和国成立与社会主义建设
+  - 改革开放与中国特色社会主义
+- name: 世界古代史
+  subcategories:
+  - 古代文明起源
+  - 古代希腊罗马
+  - 中古欧洲与亚洲封建社会
+- name: 世界近代史
+  subcategories:
+  - 新航路开辟与殖民扩张
+  - 资产阶级革命
+  - 工业革命与资本主义发展
+- name: 世界现代史
+  subcategories:
+  - 两次世界大战与国际格局
+  - 冷战与全球化
+  - 现代科技文化与当代世界
+question_types:
+- name: 选择题
+  weight: 0.12
+- name: 填空题
+  weight: 0.12
+- name: 判断题
+  weight: 0.08
+- name: 简答题
+  weight: 0.22
+- name: 计算题
+  weight: 0.23
+- name: 综合题
+  weight: 0.23
+ability_levels:
+- name: 唯物史观
+  weight: 0.20
+  description: 用唯物史观认识历史发展规律和趋势
+  sublevels:
+  - 生产力与生产关系分析
+  - 历史发展规律认识
+  - 阶级与社会分析
+  - 历史必然性理解
+- name: 时空观念
+  weight: 0.20
+  description: 在特定的时间和空间背景下理解历史事件和人物
+  sublevels:
+  - 历史时序把握
+  - 空间地理关联
+  - 历史背景分析
+  - 时代特征认识
+- name: 史料实证
+  weight: 0.20
+  description: 搜集、整理、辨析史料，运用史料重现历史
+  sublevels:
+  - 史料类型识别
+  - 史料真伪辨析
+  - 史料综合运用
+  - 历史证据意识
+- name: 历史解释
+  weight: 0.20
+  description: 对历史事件、人物和现象进行客观、合理的解释
+  sublevels:
+  - 历史因果分析
+  - 历史评价能力
+  - 多角度解读
+  - 历史比较思维
+- name: 家国情怀
+  weight: 0.20
+  description: 传承民族精神，增强民族认同感和历史使命感
+  sublevels:
+  - 民族认同与自豪
+  - 爱国主义情感
+  - 历史责任意识
+  - 人类命运共同体意识
+operators:
+  mineru_ocr:
+    img_dir: dataflow_edu/data/resources/img
+    md_dir: dataflow_edu/data/resources/md
+    batch_size: 50
+    poll_interval: 5
+    poll_timeout: 600
+    skip_existing: true
+    language: ch
+    enable_formula: true
+    enable_table: true
+  generation:
+    md_dir: dataflow_edu/data/resources/md
+    output_dir: dataflow_edu/data/generation_and_balancing
+    questions_per_pair: 5
+    max_workers: 8
+    api_delay: 0.3
+    request_timeout: 120
+    max_retries: 3
+    save_interval: 5
+  balancing:
+    output_dir: dataflow_edu/data/generation_and_balancing
+    sample_size: 32
+    max_iterations: 30
+    questions_per_round: 10
+    max_per_sublevel_iterations: 2
+    tolerance: 0.03
+    excluded_ability_sublevels: []
+  ambiguity_cleaning:
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+  ambiguity_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+  domain_cleaning:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+    domain_name: 初中历史
+  domain_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+    domain_name: 初中历史
+  deduplication:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    threshold: 0.9
+    num_perm: 128
+    n_gram: 5
+  synthesis:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+    skip_existing: true
+  translation:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    target_languages:
+    - en
+    - fr
+    translate_fields:
+    - question
+    - answer
+    - output
+    - explanation
+    - options
+    max_workers: 8
+    max_retries: 3
+    residual_pattern_zh: true
+    fix_french_option_letter: true
+  mcq_verify:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified
+    target_languages:
+    - zh
+    - en
+    - fr
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+  execute:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/execute_and_judge/4_1_executed

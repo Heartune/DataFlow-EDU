@@ -1,0 +1,182 @@
+subject: 初中地理
+grade: 初中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+- name: 地球与地图基础
+  subcategories:
+  - 地球与地球仪
+  - 地球的运动
+  - 地图的阅读与判读
+  - 地形图应用
+- name: 世界地理概览
+  subcategories:
+  - 大洲大洋与海陆变迁
+  - 亚洲
+  - 欧洲西部与非洲
+  - 美洲与大洋洲
+  - 极地地区
+- name: 中国自然地理
+  subcategories:
+  - 中国疆域与人口
+  - 地形地势与气候
+  - 河流湖泊与自然灾害
+  - 自然资源
+- name: 中国人文地理
+  subcategories:
+  - 农业地域类型与发展
+  - 工业与交通运输
+  - 城市与人口分布
+  - 区域差异与可持续发展
+- name: 人地协调与全球视野
+  subcategories:
+  - 人地关系思想
+  - 环境保护与生态建设
+  - 中国在世界中的地位
+  - 资源环境与国家安全
+question_types:
+- name: 选择题
+  weight: 0.12
+- name: 填空题
+  weight: 0.12
+- name: 判断题
+  weight: 0.08
+- name: 简答题
+  weight: 0.22
+- name: 计算题
+  weight: 0.23
+- name: 综合题
+  weight: 0.23
+ability_levels:
+- name: 人地协调观
+  weight: 0.25
+  description: 认识人类活动与地理环境的关系，树立可持续发展理念
+  sublevels:
+  - 人地关系认识
+  - 可持续发展理念
+  - 资源环境保护
+  - 区域协调发展
+- name: 综合思维
+  weight: 0.25
+  description: 从要素、结构、动态、区域等角度综合分析地理问题
+  sublevels:
+  - 要素综合分析
+  - 时空动态分析
+  - 区域整体认知
+  - 地理规律归纳
+- name: 区域认知
+  weight: 0.25
+  description: 了解不同区域的特征、差异及发展条件
+  sublevels:
+  - 区域特征描述
+  - 区域差异比较
+  - 区域发展分析
+  - 区位因素评价
+- name: 地理实践力
+  weight: 0.25
+  description: 通过观察、调查、实验等实践活动解决地理问题
+  sublevels:
+  - 地理观察与描述
+  - 地图判读与应用
+  - 地理调查与分析
+  - 地理问题解决
+operators:
+  mineru_ocr:
+    img_dir: dataflow_edu/data/resources/img
+    md_dir: dataflow_edu/data/resources/md
+    batch_size: 50
+    poll_interval: 5
+    poll_timeout: 600
+    skip_existing: true
+    language: ch
+    enable_formula: true
+    enable_table: true
+  generation:
+    md_dir: dataflow_edu/data/resources/md
+    output_dir: dataflow_edu/data/generation_and_balancing
+    questions_per_pair: 5
+    max_workers: 8
+    api_delay: 0.3
+    request_timeout: 120
+    max_retries: 3
+    save_interval: 5
+  balancing:
+    output_dir: dataflow_edu/data/generation_and_balancing
+    sample_size: 32
+    max_iterations: 30
+    questions_per_round: 10
+    max_per_sublevel_iterations: 2
+    tolerance: 0.03
+    excluded_ability_sublevels: []
+  ambiguity_cleaning:
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+  ambiguity_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+  domain_cleaning:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+    domain_name: 初中地理
+  domain_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+    domain_name: 初中地理
+  deduplication:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    threshold: 0.9
+    num_perm: 128
+    n_gram: 5
+  synthesis:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+    skip_existing: true
+  translation:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    target_languages:
+    - en
+    - fr
+    translate_fields:
+    - question
+    - answer
+    - output
+    - explanation
+    - options
+    max_workers: 8
+    max_retries: 3
+    residual_pattern_zh: true
+    fix_french_option_letter: true
+  mcq_verify:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified
+    target_languages:
+    - zh
+    - en
+    - fr
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+  execute:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/execute_and_judge/4_1_executed

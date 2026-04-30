@@ -1,0 +1,180 @@
+subject: 初中生物学
+grade: 初中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+- name: 生物与环境
+  subcategories:
+  - 生物圈
+  - 生物与环境的关系
+  - 生态系统及其稳定性
+  - 生物多样性
+- name: 生物体结构与功能
+  subcategories:
+  - 细胞的结构与功能
+  - 生物体的结构层次
+  - 植物体的结构与功能
+  - 动物体的结构与功能
+- name: 生命活动调节
+  subcategories:
+  - 植物的激素调节
+  - 人体的激素调节
+  - 神经调节
+  - 免疫与健康
+- name: 遗传与变异
+  subcategories:
+  - 遗传与变异的基础
+  - 遗传病的预防
+  - 生物的进化
+- name: 生物技术与保护
+  subcategories:
+  - 生物技术简介
+  - 生物技术的安全与伦理
+  - 环境保护与可持续发展
+  - 生物多样性保护
+question_types:
+- name: 选择题
+  weight: 0.12
+- name: 填空题
+  weight: 0.12
+- name: 判断题
+  weight: 0.08
+- name: 简答题
+  weight: 0.22
+- name: 计算题
+  weight: 0.23
+- name: 综合题
+  weight: 0.23
+ability_levels:
+- name: 生命观念
+  weight: 0.25
+  description: 形成结构与功能相适应、进化与适应、稳态与平衡等生命观念
+  sublevels:
+  - 结构与功能观
+  - 进化与适应观
+  - 稳态与平衡观
+  - 物质与能量观
+- name: 科学思维
+  weight: 0.25
+  description: 运用归纳概括、演绎推理、模型建构等方法分析生物问题
+  sublevels:
+  - 归纳与概括
+  - 演绎与推理
+  - 模型建构
+  - 批判性思维
+- name: 科学探究
+  weight: 0.25
+  description: 发现问题、设计方案、实施探究、得出结论并交流
+  sublevels:
+  - 提出问题与假设
+  - 实验方案设计
+  - 实施探究与观察
+  - 分析与交流
+- name: 社会责任
+  weight: 0.25
+  description: 关注生物科技与社会、环境的关系，形成保护生物多样性、践行健康生活等责任
+  sublevels:
+  - 生物多样性保护
+  - 健康生活倡导
+  - 生物技术伦理
+  - 环境保护意识
+operators:
+  mineru_ocr:
+    img_dir: dataflow_edu/data/resources/img
+    md_dir: dataflow_edu/data/resources/md
+    batch_size: 50
+    poll_interval: 5
+    poll_timeout: 600
+    skip_existing: true
+    language: ch
+    enable_formula: true
+    enable_table: true
+  generation:
+    md_dir: dataflow_edu/data/resources/md
+    output_dir: dataflow_edu/data/generation_and_balancing
+    questions_per_pair: 5
+    max_workers: 8
+    api_delay: 0.3
+    request_timeout: 120
+    max_retries: 3
+    save_interval: 5
+  balancing:
+    output_dir: dataflow_edu/data/generation_and_balancing
+    sample_size: 32
+    max_iterations: 30
+    questions_per_round: 10
+    max_per_sublevel_iterations: 2
+    tolerance: 0.03
+    excluded_ability_sublevels: []
+  ambiguity_cleaning:
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+  ambiguity_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+  domain_cleaning:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+    domain_name: 初中生物学
+  domain_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+    domain_name: 初中生物学
+  deduplication:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    threshold: 0.9
+    num_perm: 128
+    n_gram: 5
+  synthesis:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+    skip_existing: true
+  translation:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    target_languages:
+    - en
+    - fr
+    translate_fields:
+    - question
+    - answer
+    - output
+    - explanation
+    - options
+    max_workers: 8
+    max_retries: 3
+    residual_pattern_zh: true
+    fix_french_option_letter: true
+  mcq_verify:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified
+    target_languages:
+    - zh
+    - en
+    - fr
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+  execute:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/execute_and_judge/4_1_executed

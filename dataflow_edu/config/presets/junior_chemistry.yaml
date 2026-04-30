@@ -1,0 +1,189 @@
+subject: 初中化学
+grade: 初中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+- name: 化学基础与实验
+  subcategories:
+  - 走进化学世界
+  - 物质的变化与性质
+  - 空气与氧气
+  - 化学实验室安全
+- name: 物质构成与表示
+  subcategories:
+  - 分子和原子
+  - 原子的结构
+  - 元素与元素周期表
+  - 化学式与化合价
+- name: 化学反应原理
+  subcategories:
+  - 质量守恒定律
+  - 化学方程式
+  - 化学反应速率与条件
+  - 燃烧与灭火
+- name: 元素化合物与材料
+  subcategories:
+  - 碳和碳的氧化物
+  - 金属及其化合物
+  - 溶液与溶解度
+  - 酸碱盐
+- name: 化学与社会生活
+  subcategories:
+  - 燃料及其利用
+  - 金属材料
+  - 化学元素与人体健康
+  - 化学与环境保护
+question_types:
+- name: 选择题
+  weight: 0.12
+- name: 填空题
+  weight: 0.12
+- name: 判断题
+  weight: 0.08
+- name: 简答题
+  weight: 0.22
+- name: 计算题
+  weight: 0.23
+- name: 综合题
+  weight: 0.23
+ability_levels:
+- name: 宏观辨识与微观探析
+  weight: 0.20
+  description: 宏观观察物质变化，用微观结构解释性质和变化
+  sublevels:
+  - 物质宏观性质观察
+  - 微观结构分析
+  - 宏微结合解释
+  - 符号表征与转化
+- name: 变化观念与平衡思想
+  weight: 0.20
+  description: 认识化学变化的条件性、动态平衡性和能量转化
+  sublevels:
+  - 化学变化条件分析
+  - 动态平衡理解
+  - 能量转化认识
+  - 守恒思想运用
+- name: 证据推理与模型认知
+  weight: 0.20
+  description: 基于证据进行推理，用模型描述、解释化学现象
+  sublevels:
+  - 证据收集与分析
+  - 推理与论证
+  - 模型构建与应用
+  - 假说与验证
+- name: 科学探究与创新意识
+  weight: 0.20
+  description: 设计实验、探究问题，培养创新思维
+  sublevels:
+  - 实验方案设计
+  - 实验操作与安全
+  - 数据分析与结论
+  - 创新改进意识
+- name: 科学精神与社会责任
+  weight: 0.20
+  description: 崇尚科学，关注化学与社会、环境的关系，践行绿色化学理念
+  sublevels:
+  - 科学态度与求真精神
+  - 绿色化学理念
+  - 化学与社会关系
+  - 环境责任意识
+operators:
+  mineru_ocr:
+    img_dir: dataflow_edu/data/resources/img
+    md_dir: dataflow_edu/data/resources/md
+    batch_size: 50
+    poll_interval: 5
+    poll_timeout: 600
+    skip_existing: true
+    language: ch
+    enable_formula: true
+    enable_table: true
+  generation:
+    md_dir: dataflow_edu/data/resources/md
+    output_dir: dataflow_edu/data/generation_and_balancing
+    questions_per_pair: 5
+    max_workers: 8
+    api_delay: 0.3
+    request_timeout: 120
+    max_retries: 3
+    save_interval: 5
+  balancing:
+    output_dir: dataflow_edu/data/generation_and_balancing
+    sample_size: 32
+    max_iterations: 30
+    questions_per_round: 10
+    max_per_sublevel_iterations: 2
+    tolerance: 0.03
+    excluded_ability_sublevels: []
+  ambiguity_cleaning:
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+  ambiguity_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+  domain_cleaning:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+    domain_name: 初中化学
+  domain_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+    domain_name: 初中化学
+  deduplication:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    threshold: 0.9
+    num_perm: 128
+    n_gram: 5
+  synthesis:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+    skip_existing: true
+  translation:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    target_languages:
+    - en
+    - fr
+    translate_fields:
+    - question
+    - answer
+    - output
+    - explanation
+    - options
+    max_workers: 8
+    max_retries: 3
+    residual_pattern_zh: true
+    fix_french_option_letter: true
+  mcq_verify:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified
+    target_languages:
+    - zh
+    - en
+    - fr
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+  execute:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/execute_and_judge/4_1_executed

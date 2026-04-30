@@ -399,6 +399,7 @@ class BalancingBalancer:
             count=count,
             subcat_to_cat=subcat_to_cat,
             ability_levels=self.config.ability_levels or [],
+            subject=self.config.subject or "",
         )
 
     def should_stop(self) -> Tuple[bool, str]:

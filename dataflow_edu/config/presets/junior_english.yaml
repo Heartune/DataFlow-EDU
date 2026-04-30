@@ -1,0 +1,182 @@
+subject: 初中英语
+grade: 初中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+- name: 个人成长与日常生活
+  subcategories:
+  - 问候与介绍
+  - 家庭与朋友
+  - 学校生活
+  - 兴趣爱好
+  - 健康与饮食
+- name: 人际关系与情感
+  subcategories:
+  - 友谊与情感
+  - 节日与习俗
+  - 情绪表达
+  - 尊重与沟通
+- name: 旅行与自然环境
+  subcategories:
+  - 旅行与交通
+  - 天气与气候
+  - 自然环境与保护
+  - 动物与植物
+- name: 社会与文化
+  subcategories:
+  - 国家与文化
+  - 科技与创新
+  - 社会问题与未来
+  - 跨文化理解
+- name: 学习策略与能力
+  subcategories:
+  - 学习方法与习惯
+  - 听说读写技能
+  - 语言知识运用
+  - 自主学习与反思
+question_types:
+- name: 选择题
+  weight: 0.12
+- name: 填空题
+  weight: 0.12
+- name: 判断题
+  weight: 0.08
+- name: 简答题
+  weight: 0.22
+- name: 计算题
+  weight: 0.23
+- name: 综合题
+  weight: 0.23
+ability_levels:
+- name: 语言能力
+  weight: 0.25
+  description: 在社会情境中通过听、说、读、看、写等方式理解和表达意义
+  sublevels:
+  - 听说能力
+  - 阅读理解
+  - 书面表达
+  - 多模态交流
+- name: 文化意识
+  weight: 0.25
+  description: 理解中外文化异同，认同优秀文化，形成跨文化沟通能力
+  sublevels:
+  - 文化异同比较
+  - 跨文化理解
+  - 文化自信
+  - 国际视野
+- name: 思维品质
+  weight: 0.25
+  description: 发展逻辑性、批判性、创新性思维，用英语进行多元思考
+  sublevels:
+  - 逻辑推理
+  - 批判性思维
+  - 创新性思维
+  - 多元视角分析
+- name: 学习能力
+  weight: 0.25
+  description: 运用学习策略，规划、监控、反思英语学习，提升自主学习效率
+  sublevels:
+  - 学习策略运用
+  - 自主学习规划
+  - 学习反思与监控
+  - 合作学习
+operators:
+  mineru_ocr:
+    img_dir: dataflow_edu/data/resources/img
+    md_dir: dataflow_edu/data/resources/md
+    batch_size: 50
+    poll_interval: 5
+    poll_timeout: 600
+    skip_existing: true
+    language: ch
+    enable_formula: true
+    enable_table: true
+  generation:
+    md_dir: dataflow_edu/data/resources/md
+    output_dir: dataflow_edu/data/generation_and_balancing
+    questions_per_pair: 5
+    max_workers: 8
+    api_delay: 0.3
+    request_timeout: 120
+    max_retries: 3
+    save_interval: 5
+  balancing:
+    output_dir: dataflow_edu/data/generation_and_balancing
+    sample_size: 32
+    max_iterations: 30
+    questions_per_round: 10
+    max_per_sublevel_iterations: 2
+    tolerance: 0.03
+    excluded_ability_sublevels: []
+  ambiguity_cleaning:
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+  ambiguity_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+  domain_cleaning:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+    domain_name: 初中英语
+  domain_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+    domain_name: 初中英语
+  deduplication:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    threshold: 0.9
+    num_perm: 128
+    n_gram: 5
+  synthesis:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+    skip_existing: true
+  translation:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    target_languages:
+    - en
+    - fr
+    translate_fields:
+    - question
+    - answer
+    - output
+    - explanation
+    - options
+    max_workers: 8
+    max_retries: 3
+    residual_pattern_zh: true
+    fix_french_option_letter: true
+  mcq_verify:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified
+    target_languages:
+    - zh
+    - en
+    - fr
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+  execute:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/execute_and_judge/4_1_executed

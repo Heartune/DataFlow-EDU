@@ -1,0 +1,180 @@
+subject: 思想政治
+grade: 高中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+- name: 经济与社会
+  subcategories:
+  - 生产资料所有制与经济体制
+  - 生产、劳动与经营
+  - 收入分配与财政税收
+  - 市场经济与宏观调控
+- name: 政治与法治
+  subcategories:
+  - 人民民主专政与人民代表大会制度
+  - 中国共产党领导
+  - 民族区域自治与基层民主
+  - 法治国家与公民权利
+- name: 文化与哲学
+  subcategories:
+  - 文化的作用与发展
+  - 中华文化与民族精神
+  - 哲学基本问题
+  - 辩证唯物主义
+  - 认识论与价值观
+- name: 中国特色社会主义
+  subcategories:
+  - 中国特色社会主义道路
+  - 习近平新时代中国特色社会主义思想
+  - 中国梦与社会主义现代化
+- name: 国际政治与公共参与
+  subcategories:
+  - 国际社会与当代国际关系
+  - 公民权利与责任
+  - 公共参与与社会责任
+question_types:
+- name: 选择题
+  weight: 0.12
+- name: 填空题
+  weight: 0.12
+- name: 判断题
+  weight: 0.08
+- name: 简答题
+  weight: 0.22
+- name: 计算题
+  weight: 0.23
+- name: 综合题
+  weight: 0.23
+ability_levels:
+- name: 政治认同
+  weight: 0.25
+  description: 认同中国特色社会主义，树立社会主义核心价值观和"四个自信"
+  sublevels:
+  - 道路自信
+  - 理论自信
+  - 制度自信
+  - 文化自信
+- name: 理性精神
+  weight: 0.25
+  description: 运用辩证唯物主义和历史唯物主义观点分析问题
+  sublevels:
+  - 辩证思维
+  - 历史唯物主义运用
+  - 科学分析问题
+  - 批判性评价
+- name: 法治意识
+  weight: 0.25
+  description: 尊法学法守法用法，增强规则意识和权利义务观念
+  sublevels:
+  - 宪法与法律认知
+  - 权利义务意识
+  - 依法办事能力
+  - 法治理念践行
+- name: 公共参与
+  weight: 0.25
+  description: 积极参与社会公共事务，培养公民责任感和实践能力
+  sublevels:
+  - 社会责任担当
+  - 公共事务参与
+  - 民主协商能力
+  - 实践行动力
+operators:
+  mineru_ocr:
+    img_dir: dataflow_edu/data/resources/img
+    md_dir: dataflow_edu/data/resources/md
+    batch_size: 50
+    poll_interval: 5
+    poll_timeout: 600
+    skip_existing: true
+    language: ch
+    enable_formula: true
+    enable_table: true
+  generation:
+    md_dir: dataflow_edu/data/resources/md
+    output_dir: dataflow_edu/data/generation_and_balancing
+    questions_per_pair: 5
+    max_workers: 8
+    api_delay: 0.3
+    request_timeout: 120
+    max_retries: 3
+    save_interval: 5
+  balancing:
+    output_dir: dataflow_edu/data/generation_and_balancing
+    sample_size: 32
+    max_iterations: 30
+    questions_per_round: 10
+    max_per_sublevel_iterations: 2
+    tolerance: 0.03
+    excluded_ability_sublevels: []
+  ambiguity_cleaning:
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+  ambiguity_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+  domain_cleaning:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+    domain_name: 思想政治
+  domain_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+    domain_name: 思想政治
+  deduplication:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    threshold: 0.9
+    num_perm: 128
+    n_gram: 5
+  synthesis:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+    skip_existing: true
+  translation:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    target_languages:
+    - en
+    - fr
+    translate_fields:
+    - question
+    - answer
+    - output
+    - explanation
+    - options
+    max_workers: 8
+    max_retries: 3
+    residual_pattern_zh: true
+    fix_french_option_letter: true
+  mcq_verify:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified
+    target_languages:
+    - zh
+    - en
+    - fr
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+  execute:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/execute_and_judge/4_1_executed

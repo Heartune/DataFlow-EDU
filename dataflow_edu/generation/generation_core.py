@@ -22,6 +22,7 @@ from dataflow_edu.config.schema import (
     QuestionType,
     TaxonomyItem,
 )
+from dataflow_edu.generation.prompt_loader import get_type_hint, load_prompts
 from dataflow_edu.serving import (
     call_llm,
     get_api_delay,
@@ -255,22 +256,9 @@ def _build_shuffled_ability_sequence(
     return names[:total_slots]
 
 
-def _get_type_specific_instructions(q_type_name: str) -> str:
-    """按题型返回针对性的生成说明。"""
-    hints = {
-        "选择题": "必须包含 A、B、C、D 四个选项，且题干与选项完整独立。",
-        "单选题": "必须包含 A、B、C、D 四个选项，只有一个正确答案。",
-        "多选题": "必须包含多个选项，明确标注可多选。",
-        "填空题": "题干中需留出明确的填空位置（用下划线或括号表示），答案应为填空处的标准作答。",
-        "判断题": "题干为陈述句，答案仅为「正确」或「错误」。",
-        "简答题": "题干简洁明确，答案要点清晰、分条陈述。",
-        "计算题": "题干需给出可计算的数据或情境，答案须包含计算步骤和最终结果。",
-        "综合题": "可结合多种考查形式，答案需综合、有层次。",
-    }
-    for k, v in hints.items():
-        if k in q_type_name or q_type_name in k:
-            return v
-    return "题干与答案须独立完整，无模糊指代。"
+def _get_type_specific_instructions(q_type_name: str, subject: str = "") -> str:
+    """按题型返回针对性的生成说明，优先从学科 prompt YAML 加载。"""
+    return get_type_hint(load_prompts(subject), q_type_name)
 
 
 def _get_ability_level_prompt_for_batch(
@@ -310,6 +298,7 @@ def analyze_content_taxonomy(
     md_pair: Tuple,
     taxonomy: List[TaxonomyItem],
     question_types: List[QuestionType],
+    subject: str = "",
 ) -> Tuple[List[str], str, bool]:
     """
     阶段1：分析两页内容属于哪些 taxonomy 小类。
@@ -324,9 +313,8 @@ def analyze_content_taxonomy(
 
     whitelist = _build_subcat_whitelist(taxonomy or [])
     tax_str = _format_taxonomy_for_prompt(taxonomy)
-    sys_prompt = """你是学科教材内容分析专家。根据给定的学科分类体系，分析教材页面内容属于哪些知识小类。
-只输出 JSON 数组，包含匹配的小类名称，如 ["XXX", "XXXX"]。
-无匹配时返回空数组 []。不要输出任何解释。"""
+    prompts = load_prompts(subject)
+    sys_prompt = prompts.get("taxonomy_analysis_system", "").strip()
 
     user_prompt = f"""【学科分类体系】
 {tax_str}
@@ -382,16 +370,19 @@ def _generate_questions_single_type(
     subcat_to_cat: Dict[str, str],
     subcat_whitelist: Optional[Set[str]] = None,
     max_retries: int = 3,
+    subject: str = "",
 ) -> List[dict]:
     """
     针对单一题型与（可选）目标能力子层级生成题目。当 target_ability 非空时，写死 ability_level 为该值。
     白名单校验：subcategory 必须在 subcat_whitelist 内；非法则重试最多 max_retries 次，仍失败返回 []。
     """
     whitelist = subcat_whitelist if subcat_whitelist is not None else (set(subcat_to_cat.keys()) | {"通用"})
-    type_hint = _get_type_specific_instructions(q_type.name)
+    type_hint = _get_type_specific_instructions(q_type.name, subject)
     ability_hint = _get_ability_level_prompt_for_batch(ability_levels, target_ability)
 
-    sys_prompt = f"""你是学科习题命题专家。根据教材内容生成指定题型的习题。
+    prompts = load_prompts(subject)
+    prefix = prompts.get("question_generation_system_prefix", "你是学科习题命题专家。根据教材内容生成指定题型的习题。")
+    sys_prompt = f"""{prefix}
 【本题型】{q_type.name}
 【本题型要求】{type_hint}
 每题必须独立完整，题干中不得出现「根据上文」「文中提到」等指代。"""
@@ -468,6 +459,7 @@ def generate_questions_for_balance(
     count: int,
     subcat_to_cat: Dict[str, str],
     ability_levels: Optional[List[AbilityLevelItem]] = None,
+    subject: str = "",
 ) -> List[dict]:
     """
     为 Balancing 定向生成题目：指定题型与能力子层级。
@@ -482,6 +474,7 @@ def generate_questions_for_balance(
         count: 生成数量
         subcat_to_cat: 小类->大类映射
         ability_levels: 能力层级配置，用于反查 ability_main
+        subject: 学科名称，用于加载对应 prompt 模板
 
     Returns:
         题目列表，格式与 generate_questions 一致
@@ -494,13 +487,15 @@ def generate_questions_for_balance(
 
     whitelist = set(subcat_to_cat.keys()) | {"通用"}
     sc_str = "、".join(subcategories) if subcategories else "通用"
-    type_hint = _get_type_specific_instructions(q_type.name)
+    type_hint = _get_type_specific_instructions(q_type.name, subject)
     ability_hint = (
         f"\n\n【本批重点考察能力】{target_ability_sublevel}\n"
         "题目必须主要考察该能力子层级，答案需体现对应思维层次。"
     )
 
-    sys_prompt = f"""你是学科习题命题专家。根据教材内容生成指定题型的习题。
+    prompts = load_prompts(subject)
+    prefix = prompts.get("question_generation_system_prefix", "你是学科习题命题专家。根据教材内容生成指定题型的习题。")
+    sys_prompt = f"""{prefix}
 【本题型】{q_type.name}
 【本题型要求】{type_hint}
 每题必须独立完整，题干中不得出现「根据上文」「文中提到」等指代。"""
@@ -577,6 +572,7 @@ def generate_questions(
         List[Union[Tuple[QuestionType, int, Optional[str]], Tuple[QuestionType, int]]]
     ] = None,
     taxonomy: Optional[List[TaxonomyItem]] = None,
+    subject: str = "",
 ) -> List[dict]:
     """
     阶段2：根据 content、小类、题型分配，使用题型与能力层级不同的 Prompt 生成题目。
@@ -614,15 +610,21 @@ def generate_questions(
             sc_str=sc_str,
             subcat_to_cat=subcat_to_cat,
             subcat_whitelist=subcat_whitelist,
+            subject=subject,
         )
         all_questions.extend(qs)
 
     return all_questions
 
 
-def process_page_pair_stage1(pair_data, taxonomy: List[TaxonomyItem], question_types: List[QuestionType]):
+def process_page_pair_stage1(
+    pair_data,
+    taxonomy: List[TaxonomyItem],
+    question_types: List[QuestionType],
+    subject: str = "",
+):
     """阶段1 单对处理。Returns: (subcategories, page_info, failed) for completed_pairs dict."""
-    subcats, page_info, failed = analyze_content_taxonomy(pair_data, taxonomy, question_types)
+    subcats, page_info, failed = analyze_content_taxonomy(pair_data, taxonomy, question_types, subject=subject)
     return subcats, page_info, failed
 
 
@@ -636,13 +638,14 @@ def process_page_pair_stage2(
         List[Union[Tuple[QuestionType, int, Optional[str]], Tuple[QuestionType, int]]]
     ] = None,
     taxonomy: Optional[List[TaxonomyItem]] = None,
+    subject: str = "",
 ):
     """阶段2 单对处理。Returns: (questions, page_info)."""
     if not subcategories:
         subcategories = ["通用"]
     questions = generate_questions(
         pair_data, subcategories, question_types, ability_levels, num_questions,
-        allocation=allocation, taxonomy=taxonomy,
+        allocation=allocation, taxonomy=taxonomy, subject=subject,
     )
     _, _, page1, page2 = pair_data
     page_info = f"{page1}-{page2}" if page2 else str(page1)
@@ -738,9 +741,11 @@ def run_stage1(
         print("  阶段1 已全部完成")
         return True, stage1_file
 
+    subject = config.subject or ""
+
     def task(idx):
         pair = page_pairs[idx]
-        subcats, page_info, failed = process_page_pair_stage1(pair, taxonomy, question_types)
+        subcats, page_info, failed = process_page_pair_stage1(pair, taxonomy, question_types, subject=subject)
         path1, path2, p1, p2 = pair
         return idx, {
             "pair_index": idx,
@@ -838,6 +843,8 @@ def run_stage2(
         sorted_indices = sorted(indices_to_process)
         rank_of_idx = {idx: k for k, idx in enumerate(sorted_indices)}
 
+        subject = config.subject or ""
+
         def task(idx: int):
             if idx >= len(page_pairs):
                 return idx, []
@@ -859,6 +866,7 @@ def run_stage2(
                 questions_per_pair,
                 allocation=allocation,
                 taxonomy=config.taxonomy,
+                subject=subject,
             )
             return idx, qs
 

@@ -1,0 +1,192 @@
+subject: 初中数学
+grade: 初中
+default_difficulty_distribution:
+  易: 0.3
+  中: 0.5
+  难: 0.2
+taxonomy:
+- name: 数与代数
+  subcategories:
+  - 有理数
+  - 整式
+  - 一元一次方程
+  - 二元一次方程组
+  - 不等式与不等式组
+  - 实数与二次根式
+- name: 图形与几何
+  subcategories:
+  - 几何图形初步
+  - 相交线与平行线
+  - 三角形与全等
+  - 平行四边形与特殊四边形
+  - 圆与旋转
+- name: 函数与坐标
+  subcategories:
+  - 平面直角坐标系
+  - 一次函数
+  - 二次函数
+  - 锐角三角函数
+- name: 统计与概率
+  subcategories:
+  - 数据的收集整理与描述
+  - 数据的分析
+  - 概率初步
+- name: 综合应用与建模
+  subcategories:
+  - 数学建模与探究
+  - 图形变换（轴对称、相似、位似）
+  - 课题学习与实际应用
+question_types:
+- name: 选择题
+  weight: 0.12
+- name: 填空题
+  weight: 0.12
+- name: 判断题
+  weight: 0.08
+- name: 简答题
+  weight: 0.22
+- name: 计算题
+  weight: 0.23
+- name: 综合题
+  weight: 0.23
+ability_levels:
+- name: 数学抽象
+  weight: 0.167
+  description: 从具体事物中抽象出数学概念、关系和规律，用符号表征
+  sublevels:
+  - 概念抽象与归纳
+  - 符号化表达
+  - 数学规律提炼
+- name: 逻辑推理
+  weight: 0.167
+  description: 从已知事实和命题出发，依据逻辑规则推出结论（归纳、类比、演绎）
+  sublevels:
+  - 归纳推理
+  - 演绎推理
+  - 类比推理
+- name: 数学建模
+  weight: 0.167
+  description: 将现实问题抽象为数学模型，求解、验证并解决实际问题
+  sublevels:
+  - 问题数学化
+  - 模型构建与求解
+  - 结果验证与应用
+- name: 直观想象
+  weight: 0.167
+  description: 借助图形和空间想象感知形态、变化，建立数形结合的直观模型
+  sublevels:
+  - 图形感知与识别
+  - 空间想象能力
+  - 数形结合运用
+- name: 数学运算
+  weight: 0.167
+  description: 依据运算法则，选择方法进行运算并求解问题
+  sublevels:
+  - 运算法则掌握
+  - 运算方法选择
+  - 运算结果检验
+- name: 数据分析
+  weight: 0.165
+  description: 收集、整理数据，用统计方法提取信息、构建模型、推断结论
+  sublevels:
+  - 数据收集与整理
+  - 统计图表解读
+  - 数据推断与决策
+operators:
+  mineru_ocr:
+    img_dir: dataflow_edu/data/resources/img
+    md_dir: dataflow_edu/data/resources/md
+    batch_size: 50
+    poll_interval: 5
+    poll_timeout: 600
+    skip_existing: true
+    language: ch
+    enable_formula: true
+    enable_table: true
+  generation:
+    md_dir: dataflow_edu/data/resources/md
+    output_dir: dataflow_edu/data/generation_and_balancing
+    questions_per_pair: 5
+    max_workers: 8
+    api_delay: 0.3
+    request_timeout: 120
+    max_retries: 3
+    save_interval: 5
+  balancing:
+    output_dir: dataflow_edu/data/generation_and_balancing
+    sample_size: 32
+    max_iterations: 30
+    questions_per_round: 10
+    max_per_sublevel_iterations: 2
+    tolerance: 0.03
+    excluded_ability_sublevels: []
+  ambiguity_cleaning:
+    input_dir: dataflow_edu/data/generation_and_balancing/2_2_balanced
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+  ambiguity_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_1_ambiguity_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+  domain_cleaning:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_2_ambiguity_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    max_workers: 8
+    max_retries: 3
+    threshold_remove: 1
+    domain_name: 初中数学
+  domain_refinement:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_3_domain_cleaned
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    max_workers: 8
+    max_retries: 3
+    target_scores: [2, 3]
+    domain_name: 初中数学
+  deduplication:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_4_domain_refined
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    threshold: 0.9
+    num_perm: 128
+    n_gram: 5
+  synthesis:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+    skip_existing: true
+  translation:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_6_synthesized
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    target_languages:
+    - en
+    - fr
+    translate_fields:
+    - question
+    - answer
+    - output
+    - explanation
+    - options
+    max_workers: 8
+    max_retries: 3
+    residual_pattern_zh: true
+    fix_french_option_letter: true
+  mcq_verify:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_7_translated
+    output_dir: dataflow_edu/data/cleaning_and_refinement/3_8_mcq_verified
+    target_languages:
+    - zh
+    - en
+    - fr
+    max_workers: 8
+    max_retries: 3
+    max_tokens: 2000
+    temperature: 0.3
+  execute:
+    input_dir: dataflow_edu/data/cleaning_and_refinement/3_5_deduplicated
+    output_dir: dataflow_edu/data/execute_and_judge/4_1_executed
