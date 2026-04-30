@@ -25,7 +25,8 @@ services:
     # ports:
     #   - "3000:3000"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      # worker 镜像只有 curl，无 wget；失败会导致 STATUS unhealthy 但服务实际正常
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -44,6 +45,7 @@ services:
 
   backup:
     image: keinos/sqlite3:latest
+    user: root
     restart: unless-stopped
     depends_on:
       - worker
@@ -54,9 +56,8 @@ services:
     # -f: 前台运行；-l 8: log level notice
     entrypoint: >
       sh -c "
-        chmod +x /backup.sh &&
         mkdir -p /var/spool/cron/crontabs &&
-        echo '0 3 * * * /backup.sh >> /var/log/backup.log 2>&1' > /var/spool/cron/crontabs/root &&
+        echo '0 3 * * * sh /backup.sh >> /var/log/backup.log 2>&1' > /var/spool/cron/crontabs/root &&
         crond -f -l 8
       "
 

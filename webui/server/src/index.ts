@@ -1,6 +1,7 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { type Request } from 'express';
 import cors from 'cors';
+import type { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
@@ -47,6 +48,9 @@ setInterval(() => {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Docker 生产部署中 API 位于 Nginx 反代之后，开启后 req.ip / 限流才能使用真实客户端 IP。
+app.set('trust proxy', 1);
+
 // CORS：dev 允许 localhost:5173，生产走 CORS_ORIGINS 环境变量（逗号分隔）
 const rawOrigins = process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
 const devOrigins =
@@ -76,19 +80,41 @@ function isDevLoopbackOrigin(origin: string): boolean {
   }
 }
 
+function normalizeForwardedHost(value: string | undefined): string | null {
+  const first = value?.split(',')[0]?.trim().toLowerCase();
+  return first || null;
+}
+
+function isReverseProxySameOrigin(origin: string, req: Request): boolean {
+  try {
+    const originUrl = new URL(origin);
+    if (originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') return false;
+    const forwardedHost = normalizeForwardedHost(req.get('x-forwarded-host'));
+    const host = normalizeForwardedHost(req.get('host'));
+    return [forwardedHost, host].filter(Boolean).includes(originUrl.host.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedCorsOrigin(origin: string | undefined, req: Request): boolean {
+  // 允许无 Origin 请求（服务端直接调用 / curl / healthcheck 等）
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  if (process.env.NODE_ENV !== 'production' && isDevLoopbackOrigin(origin)) return true;
+  // Docker 生产部署下，浏览器访问 web:80，由 Nginx 同源反代 /api 到 worker:3000。
+  // 此时后端应允许与反代入口 Host 完全一致的 Origin，避免 IP:PORT 部署必须手工改 CORS_ORIGINS。
+  return isReverseProxySameOrigin(origin, req);
+}
+
 app.use(
-  cors({
-    origin: (origin, cb) => {
-      // 允许无 origin 请求（服务端直接调用 / curl 等）
-      if (!origin || allowedOrigins.includes(origin)) {
-        cb(null, true);
-      } else if (process.env.NODE_ENV !== 'production' && isDevLoopbackOrigin(origin)) {
-        cb(null, true);
-      } else {
-        cb(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
+  cors((req, cb) => {
+    const origin = req.get('origin');
+    const options: CorsOptions = {
+      origin: isAllowedCorsOrigin(origin, req) ? true : false,
+      credentials: true,
+    };
+    cb(null, options);
   })
 );
 
