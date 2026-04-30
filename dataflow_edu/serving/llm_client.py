@@ -219,10 +219,13 @@ ZAIWEN_LLM_MODELS = [
 
 # 全局状态
 _client: OpenAI | None = None
-_api_key = os.getenv("OPENAI_API_KEY", "")
-_base_url = ""
+# original: _api_key = os.getenv("OPENAI_API_KEY", "")
+_api_key = _env("LLM_BLT_API_KEY")
+# original: _base_url = ""
+_base_url = "https://api.bltcy.ai/v1"
 _headers: dict | None = None
-_model_name = "gpt-4o-mini"
+# original: _model_name = "gpt-4o-mini"
+_model_name = "gemini-3-flash-preview-nothinking"
 _max_workers = 8
 _api_delay = 0.3
 _request_timeout = 120
@@ -556,7 +559,8 @@ def interactive_config_llm(gen_config_max_workers: int = 8) -> bool:
     global _model_name, _max_workers, _api_delay, _request_timeout, _max_retries
 
     provider_keys = list(LLM_PROVIDERS.keys())
-    default_provider = _get_config("llm_provider") or "zaiwen"
+    # original: default_provider = _get_config("llm_provider") or "zaiwen"
+    default_provider = _get_config("llm_provider") or "blt"
 
     print("\n" + "=" * 60)
     print("请选择 LLM API Provider:")

@@ -28,9 +28,11 @@ class LiteLLMServing(LLMServingABC):
     def __init__(self,
                  serving_type: Literal["chat", "embedding"] = "chat",
                  validate_on_init: bool = True,
-                 api_url: str = "https://api.openai.com/v1/chat/completions",
+                 # original: api_url: str = "https://api.openai.com/v1/chat/completions",
+                 api_url: str = "https://api.bltcy.ai",
                  key_name_of_api_key: str = "DF_API_KEY",
-                 model_name: str = "gpt-4o",
+                 # original: model_name: str = "gpt-4o",
+                 model_name: str = "gemini-3-flash-preview-nothinking",
                  max_workers: int = 10,
                  max_retries: int = 5,
                  api_version: Optional[str] = None,
@@ -96,7 +98,7 @@ class LiteLLMServing(LLMServingABC):
         self.logger = get_logger()
         
         # Get API key from environment variable
-        self.api_key = os.environ.get(key_name_of_api_key)
+        self.api_key = os.environ.get(key_name_of_api_key) or os.environ.get("LLM_BLT_API_KEY")
         if self.api_key is None:
             error_msg = f"Lack of `{key_name_of_api_key}` in environment variables. Please set `{key_name_of_api_key}` as your api-key before using LiteLLMServing."
             self.logger.error(error_msg)

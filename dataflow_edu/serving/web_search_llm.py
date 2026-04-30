@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-联网 LLM 客户端：仅复用 ``LLM_PROVIDERS["zgca"]`` provider，依赖模型自带搜索能力。
+联网 LLM 客户端：默认复用 ``LLM_PROVIDERS["blt"]`` provider，依赖模型自带搜索能力。
 
 设计要点（详见 agent_notes.md「联网 LLM 与素养建议」一节）：
-- 不引入 Tavily / Bing / SerpAPI 等外部检索 SDK，全部靠 zgca 上具备
+- 不引入 Tavily / Bing / SerpAPI 等外部检索 SDK，全部靠默认 provider 上具备
   原生联网能力的模型（如 gemini-3-flash-preview-nothinking / Pro 系）按 system prompt 自行检索。
 - API key 一律从环境变量 ``LLM_API_KEY`` 读取（与 ``task_runner`` 的 BYOK
   链路一致），不会触发交互式 ``interactive_config_llm``。
-- 模型选择优先级：函数入参 > ``.llm_config.json::llm_model_zgca`` > 内置默认
+- 模型选择优先级：函数入参 > ``.llm_config.json::llm_model_blt`` > 内置默认
   ``gemini-3-flash-preview-nothinking``。
 
 stdout / stderr 协议：调用方（CLI / Operator）需自行序列化结果，本模块仅返回
@@ -28,6 +28,7 @@ from openai import OpenAI
 from dataflow_edu.serving.llm_client import LLM_PROVIDERS
 
 DEFAULT_MODEL = "gemini-3-flash-preview-nothinking"
+DEFAULT_PROVIDER = "blt"
 DEFAULT_TIMEOUT = 60
 DEFAULT_RETRIES = 2
 
@@ -36,7 +37,7 @@ _CONFIG_FILE = _PROJECT_ROOT / ".llm_config.json"
 
 
 def _load_saved_model() -> Optional[str]:
-    """读取 ``.llm_config.json`` 中 zgca 的模型选项；不存在或损坏返回 None。"""
+    """读取 ``.llm_config.json`` 中默认 provider 的模型选项；不存在或损坏返回 None。"""
     if not _CONFIG_FILE.exists():
         return None
     try:
@@ -44,7 +45,8 @@ def _load_saved_model() -> Optional[str]:
             cfg = json.load(f)
     except Exception:
         return None
-    val = cfg.get("llm_model_zgca")
+    # original: val = cfg.get("llm_model_zgca")
+    val = cfg.get(f"llm_model_{DEFAULT_PROVIDER}")
     return val if isinstance(val, str) and val.strip() else None
 
 
@@ -59,7 +61,8 @@ def _resolve_model(model: Optional[str]) -> str:
 
 def _resolve_api_key() -> str:
     # 与 task_runner 注入的 env 变量名对齐，覆盖几个常见命名以便复用相同 BYOK 头
-    for key in ("LLM_API_KEY", "LLM_ZGCA_API_KEY", "OPENAI_API_KEY"):
+    # original: ("LLM_API_KEY", "LLM_ZGCA_API_KEY", "OPENAI_API_KEY")
+    for key in ("LLM_API_KEY", "LLM_BLT_API_KEY", "LLM_ZGCA_API_KEY", "OPENAI_API_KEY"):
         v = os.getenv(key)
         if v and v.strip():
             return v.strip()
@@ -67,7 +70,8 @@ def _resolve_api_key() -> str:
 
 
 def _build_client(api_key: str, timeout: int) -> OpenAI:
-    provider = LLM_PROVIDERS["zgca"]
+    # original: provider = LLM_PROVIDERS["zgca"]
+    provider = LLM_PROVIDERS[DEFAULT_PROVIDER]
     base_url = provider["base_url"]
     return OpenAI(
         api_key=api_key,
@@ -96,7 +100,7 @@ def call_web_search_llm(
     timeout: int = DEFAULT_TIMEOUT,
     max_retries: int = DEFAULT_RETRIES,
 ) -> Optional[str]:
-    """以 zgca provider 调用具备联网能力的模型。
+    """以默认 provider 调用具备联网能力的模型。
 
     - ``system_prompt`` 会被前置 ``WEB_SEARCH_HINT``，强化「调用联网能力」的指令。
     - 失败重试 ``max_retries`` 次，最终失败返回 ``None``。

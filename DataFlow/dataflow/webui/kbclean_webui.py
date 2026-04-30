@@ -122,7 +122,8 @@ def create_ui():
         serving_type = gr.Radio(choices=["vllm", "api", "sglang"], value="vllm", label="Serving Type")
 
         # Common parameter
-        model_name = gr.Textbox(value="Qwen/Qwen2.5-7B-Instruct", label="Model Name")
+        # original: model_name = gr.Textbox(value="Qwen/Qwen2.5-7B-Instruct", label="Model Name")
+        model_name = gr.Textbox(value="gemini-3-flash-preview-nothinking", label="Model Name")
 
         # Parameter groups
         vllm_params = gr.Column(visible=True)
@@ -132,8 +133,13 @@ def create_ui():
 
         api_params = gr.Column(visible=False)
         with api_params:
-            api_url = gr.Textbox(label="API URL", placeholder="e.g. http://api.server")
-            api_key = gr.Textbox(label="API Key", type="password")
+            # original: api_url/api_key had placeholder/empty defaults here.
+            api_url = gr.Textbox(label="API URL", value="https://api.bltcy.ai", placeholder="e.g. http://api.server")
+            api_key = gr.Textbox(
+                label="API Key",
+                type="password",
+                value=os.getenv("DF_API_KEY") or os.getenv("LLM_BLT_API_KEY", ""),
+            )
             api_max_workers = gr.Number(value=1, label="Max Workers")
 
         sglang_params = gr.Column(visible=False)

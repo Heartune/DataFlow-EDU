@@ -542,9 +542,14 @@ with gr.Blocks(title="DataFlow 动态算子和Pipeline可视化") as demo:
                 )
                 with gr.Column(visible=True) as api_group:
                     api_section_md = gr.Markdown(current_t["api_section"])
-                    api_url = gr.Textbox(label=current_t["api_url"])
-                    model_name = gr.Textbox(label=current_t["model_name"])
-                    api_key = gr.Textbox(label=current_t["api_key"], type="password")
+                    # original: api_url/model_name/api_key had empty defaults here.
+                    api_url = gr.Textbox(label=current_t["api_url"], value="https://api.bltcy.ai")
+                    model_name = gr.Textbox(label=current_t["model_name"], value="gemini-3-flash-preview-nothinking")
+                    api_key = gr.Textbox(
+                        label=current_t["api_key"],
+                        type="password",
+                        value=os.getenv("DF_API_KEY") or os.getenv("LLM_BLT_API_KEY", ""),
+                    )
                     max_workers = gr.Number(label=current_t["max_workers"], value=2)
                 with gr.Column(visible=False) as local_group:
                     local_section_md = gr.Markdown(current_t["local_section"])
@@ -561,9 +566,16 @@ with gr.Blocks(title="DataFlow 动态算子和Pipeline可视化") as demo:
             storage_section_md2 = gr.Markdown(current_t["storage_section"])
             pipeline_cache_path = gr.Textbox(label=current_t["cache_path"], value="./cache")
             pipeline_file_name_prefix = gr.Textbox(label=current_t["file_name_prefix"], value="result")
-            pipeline_api_url = gr.Textbox(label=current_t["api_url"], value="https://api.openai.com/v1/chat/completions")
-            pipeline_api_model_name = gr.Textbox(label=current_t["model_name"], value="gpt-4o-mini")
-            pipeline_api_key = gr.Textbox(label=current_t["api_key"], type="password")
+            # original: pipeline_api_url = gr.Textbox(label=current_t["api_url"], value="https://api.openai.com/v1/chat/completions")
+            pipeline_api_url = gr.Textbox(label=current_t["api_url"], value="https://api.bltcy.ai")
+            # original: pipeline_api_model_name = gr.Textbox(label=current_t["model_name"], value="gpt-4o-mini")
+            pipeline_api_model_name = gr.Textbox(label=current_t["model_name"], value="gemini-3-flash-preview-nothinking")
+            # original: pipeline_api_key = gr.Textbox(label=current_t["api_key"], type="password")
+            pipeline_api_key = gr.Textbox(
+                label=current_t["api_key"],
+                type="password",
+                value=os.getenv("DF_API_KEY") or os.getenv("LLM_BLT_API_KEY", ""),
+            )
             # 新增保存 API Key 按钮
             save_api_key_btn = gr.Button(value="保存 API Key", variant="secondary")
             # 绑定：点击按钮时执行保存环境变量的操作

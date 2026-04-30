@@ -100,7 +100,7 @@ def _init_llm_noninteractive() -> None:
     优先级（provider / model / base_url）：
       - 环境变量 DATAFLOW_LLM_{PROVIDER, MODEL, BASE_URL}
       - 项目根 .llm_config.json 中保存的同类字段
-      - 兜底默认 provider=openai
+      - 兜底默认 provider=blt（原来为 openai）
     api_key：
       - 环境变量 LLM_API_KEY > 上述配置文件中 llm_api_key_<provider> > 空
     """
@@ -110,7 +110,8 @@ def _init_llm_noninteractive() -> None:
     provider = (
         os.getenv("DATAFLOW_LLM_PROVIDER")
         or saved.get("llm_provider")
-        or "openai"
+        # original: or "openai"
+        or "blt"
     ).strip()
 
     pc = llm_client.LLM_PROVIDERS.get(provider, {})
@@ -123,7 +124,8 @@ def _init_llm_noninteractive() -> None:
     model = (
         os.getenv("DATAFLOW_LLM_MODEL")
         or saved.get(f"llm_model_{provider}")
-        or "gpt-4o-mini"
+        # original: or "gpt-4o-mini"
+        or "gemini-3-flash-preview-nothinking"
     ).strip()
     api_key = (
         os.getenv("LLM_API_KEY")

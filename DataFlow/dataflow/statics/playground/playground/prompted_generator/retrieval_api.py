@@ -19,7 +19,8 @@ class RAG():
         self.docs = docs
 
     async def initialize(self):
-        self.llm_serving = await LightRAGServing.create(api_url="https://api.openai.com/v1", document_list=self.docs)
+        # original: api_url="https://api.openai.com/v1"
+        self.llm_serving = await LightRAGServing.create(api_url="https://api.bltcy.ai", document_list=self.docs)
         self.retrieval_generator = RetrievalGenerator(
             llm_serving = self.llm_serving,
             system_prompt="Answer the question based on the text."

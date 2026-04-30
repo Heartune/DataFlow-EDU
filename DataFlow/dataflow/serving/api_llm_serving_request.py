@@ -19,9 +19,11 @@ class APILLMServing_request(LLMServingABC):
         return
     
     def __init__(self, 
-                 api_url: str = "https://api.openai.com/v1/chat/completions",
+                 # original: api_url: str = "https://api.openai.com/v1/chat/completions",
+                 api_url: str = "https://api.bltcy.ai",
                  key_name_of_api_key: str = "DF_API_KEY",
-                 model_name: str = "gpt-4o",
+                 # original: model_name: str = "gpt-4o",
+                 model_name: str = "gemini-3-flash-preview-nothinking",
                  temperature: float = 0.0,
                  max_workers: int = 10,
                  max_retries: int = 5,
@@ -49,7 +51,7 @@ class APILLMServing_request(LLMServingABC):
         self.logger = get_logger()
 
         # config api_key in os.environ global, since safty issue.
-        self.api_key = os.environ.get(key_name_of_api_key)
+        self.api_key = os.environ.get(key_name_of_api_key) or os.environ.get("LLM_BLT_API_KEY")
         if self.api_key is None:
             error_msg = f"Lack of `{key_name_of_api_key}` in environment variables. Please set `{key_name_of_api_key}` as your api-key to {api_url} before using APILLMServing_request."
             self.logger.error(error_msg)

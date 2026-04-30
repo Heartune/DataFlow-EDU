@@ -206,8 +206,10 @@ class MultiHopRAGPipeline:
         )
 
         self.llm_serving = APILLMServing_request(
-            api_url="https://api.openai.com/v1/chat/completions",
-            model_name="o4-mini",
+            # original: api_url="https://api.openai.com/v1/chat/completions",
+            api_url="https://api.bltcy.ai",
+            # original: model_name="o4-mini",
+            model_name="gemini-3-flash-preview-nothinking",
             max_workers=50
         )
 

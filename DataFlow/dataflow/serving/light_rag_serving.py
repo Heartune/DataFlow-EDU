@@ -47,9 +47,11 @@ async def initialize_rag(
 
 class LightRAGServing(LLMServingABC):
     def __init__(self,
-                 api_url: str = "https://api.openai.com/v1",
+                 # original: api_url: str = "https://api.openai.com/v1",
+                 api_url: str = "https://api.bltcy.ai",
                  key_name_of_api_key: str = "DF_API_KEY",
-                 llm_model_name: str = "gpt-4o",
+                 # original: llm_model_name: str = "gpt-4o",
+                 llm_model_name: str = "gemini-3-flash-preview-nothinking",
                  embed_model_name: str = "bge-m3:latest",
                  embed_binding_host: str = "http://localhost:11434",
                  embedding_dim: int = 1024,
@@ -81,7 +83,7 @@ class LightRAGServing(LLMServingABC):
         self.document_list = document_list
 
         # config api_key in os.environ global, since safty issue.
-        self.api_key = os.environ.get(key_name_of_api_key)
+        self.api_key = os.environ.get(key_name_of_api_key) or os.environ.get("LLM_BLT_API_KEY")
         if self.api_key is None:
             error_msg = f"Lack of `{key_name_of_api_key}` in environment variables. Please set `{key_name_of_api_key}` as your api-key to {api_url} before using APILLMServing_request."
             self.logger.error(error_msg)
@@ -109,7 +111,7 @@ class LightRAGServing(LLMServingABC):
                 return
             
         return instance
-    
+
     def start_serving(self):
         pass
 
@@ -135,7 +137,7 @@ class LightRAGServing(LLMServingABC):
             with open(path, "r", encoding="utf-8") as f:
                 tasks.append(self.rag.ainsert(f.read()))
         await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     async def generate_from_input(self, user_inputs: List[str], system_prompt: str) -> List[str]:
         tasks = [
             self.rag.aquery(question, system_prompt=system_prompt, param=QueryParam(mode="hybrid"))
@@ -143,4 +145,3 @@ class LightRAGServing(LLMServingABC):
         ]
         responses = await tqdm_asyncio.gather(*tasks)
         return list(responses)
-    

@@ -12,8 +12,10 @@ class VQA_generator():
             cache_type="json",
         )
         self.llm_serving = APIVLMServing_openai(
-            model_name="o4-mini",
-            api_url="https://api.openai.com/v1", # openai api url
+            # original: model_name="o4-mini",
+            model_name="gemini-3-flash-preview-nothinking",
+            # original: api_url="https://api.openai.com/v1", # openai api url
+            api_url="https://api.bltcy.ai",
             key_name_of_api_key="DF_API_KEY",
         )
         self.vqa_generate = PromptedVQAGenerator(

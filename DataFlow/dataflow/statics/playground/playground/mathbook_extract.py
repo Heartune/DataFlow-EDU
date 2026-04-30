@@ -4,9 +4,11 @@ from dataflow.serving import APIVLMServing_openai
 class QuestionExtractPipeline:
     def __init__(self, 
                  llm_serving: APIVLMServing_openai,
-                 api_url: str = "https://api.openai.com/v1", # end with /v1
+                 # original: api_url: str = "https://api.openai.com/v1", # end with /v1
+                 api_url: str = "https://api.bltcy.ai",
                  key_name_of_api_key: str = "DF_API_KEY", # set in environment first: export DF_API_KEY="your_openai_api_key"
-                 model_name: str = "o4-mini",
+                 # original: model_name: str = "o4-mini",
+                 model_name: str = "gemini-3-flash-preview-nothinking",
                  max_workers: int = 20
                  ):
         self.extractor = MathBookQuestionExtract(
@@ -32,8 +34,10 @@ class QuestionExtractPipeline:
 
 if __name__ == "__main__":
     llm_serving = APIVLMServing_openai(
-        api_url="https://api.openai.com/v1",
-        model_name="o4-mini",
+        # original: api_url="https://api.openai.com/v1",
+        api_url="https://api.bltcy.ai",
+        # original: model_name="o4-mini",
+        model_name="gemini-3-flash-preview-nothinking",
         max_workers=20
     )
 

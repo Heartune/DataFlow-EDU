@@ -23,9 +23,11 @@ class APIVLMServing_openai(LLMServingABC):
 
     def __init__(
         self,
-        api_url: str = "https://api.openai.com/v1",
+        # original: api_url: str = "https://api.openai.com/v1",
+        api_url: str = "https://api.bltcy.ai",
         key_name_of_api_key: str = "DF_API_KEY",
-        model_name: str = "o4-mini",
+        # original: model_name: str = "o4-mini",
+        model_name: str = "gemini-3-flash-preview-nothinking",
         max_workers: int = 10,
         timeout: int = 1800,
         temperature = 0.0
@@ -44,7 +46,7 @@ class APIVLMServing_openai(LLMServingABC):
         self.logger = get_logger()
         self.timeout = timeout
         self.temperature = temperature
-        api_key = os.environ.get(key_name_of_api_key)
+        api_key = os.environ.get(key_name_of_api_key) or os.environ.get("LLM_BLT_API_KEY")
         if not api_key:
             self.logger.error(f"API key not found in environment variable '{key_name_of_api_key}'")
             raise EnvironmentError(f"Missing environment variable '{key_name_of_api_key}'")

@@ -15,8 +15,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache-prefix", default="edu_socratic_hint_generator", help="Cache file prefix")
     parser.add_argument("--cache-type", default="jsonl", help="Cache type: json/jsonl/csv/parquet/pickle")
 
-    parser.add_argument("--api-url", default="https://api.openai.com/v1/chat/completions", help="LLM API URL")
-    parser.add_argument("--model-name", default="gpt-4o-mini", help="LLM model name")
+    # original: default="https://api.openai.com/v1/chat/completions"
+    parser.add_argument("--api-url", default="https://api.bltcy.ai", help="LLM API URL")
+    # original: default="gpt-4o-mini"
+    parser.add_argument("--model-name", default="gemini-3-flash-preview-nothinking", help="LLM model name")
     parser.add_argument(
         "--system-prompt",
         default=(
