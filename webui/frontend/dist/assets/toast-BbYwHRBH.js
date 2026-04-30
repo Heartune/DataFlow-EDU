@@ -1,0 +1,1 @@
+import{$ as a,r as f}from"./index-rEX6QS8s.js";const v=a("toast",()=>{const e=f([]);let r=0;function s(t,o="info"){const i=r++;e.value.push({id:i,message:t,type:o}),setTimeout(()=>{e.value=e.value.filter(u=>u.id!==i)},4e3)}function n(t){e.value=e.value.filter(o=>o.id!==t)}return{items:e,show:s,remove:n}});export{v as useToastStore};
