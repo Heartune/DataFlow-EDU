@@ -28,7 +28,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'tasks/new',
         name: 'teacher-tasks-new',
-        component: () => import('@/views/teacher/NewTaskView.vue'),
+        component: () => import('@/views/teacher/UploadView.vue'),
       },
       {
         path: 'tasks/:id',
@@ -38,13 +38,19 @@ const routes: RouteRecordRaw[] = [
           {
             path: '',
             name: 'teacher-task-progress',
-            component: () => import('@/views/teacher/TaskDetailView.vue'),
+            component: () => import('@/views/teacher/ProgressView.vue'),
+            props: true,
+          },
+          {
+            path: 'stats',
+            name: 'teacher-task-stats',
+            component: () => import('@/views/teacher/StatsView.vue'),
             props: true,
           },
           {
             path: 'wizard',
             name: 'teacher-task-wizard',
-            component: () => import('@/views/teacher/WizardView.vue'),
+            component: () => import('@/views/teacher/ConfigView.vue'),
             props: true,
           },
           {
@@ -65,9 +71,18 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/admin',
-    name: 'admin',
-    component: () => import('@/views/admin/AdminLayout.vue'),
     meta: { adminOnly: true },
+    children: [
+      { path: '', name: 'admin', component: () => import('@/views/admin/AdminLayout.vue') },
+      { path: 'users', name: 'admin-users', component: () => import('@/views/admin/UserManagementView.vue') },
+    ],
+  },
+  {
+    path: '/share/:token',
+    name: 'share',
+    component: () => import('@/views/teacher/ShareView.vue'),
+    props: true,
+    meta: { public: true },
   },
   { path: '/:pathMatch(.*)*', redirect: '/teacher/tasks' },
 ];

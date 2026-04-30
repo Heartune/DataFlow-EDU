@@ -244,14 +244,14 @@ function autoResizeTextarea(e: Event) {
 </script>
 
 <template>
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+  <main class="max-w-[90rem] mx-auto px-4 sm:px-6 py-6 space-y-5">
     <section
       class="bg-white rounded-xl shadow-sm border border-slate-200/60 p-5 animate-fade-in-up"
     >
       <p class="text-slate-600 text-sm mb-4 leading-relaxed">
         欢迎来到DataFlow-EDU参数配置面板（Configuration Manager）！<br>
         该面板用于管理「考察知识方向」「能力层级」「题型池」及各 Pipeline 算子的参数。<br>
-        选择预设可快速加载学科模板（如 biology），编辑后请点击「保存配置」生效。<br>
+        选择预设可快速加载学科模板（如 senior_biology），编辑后请点击「保存配置」生效。<br>
         下方四个标签分别对应知识分类、题型权重、能力层级与算子参数的配置。
       </p>
       <div class="flex flex-wrap items-center gap-3">

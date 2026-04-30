@@ -15,6 +15,16 @@ const totalPages = computed(() =>
   Math.max(1, Math.ceil(allQuestions.value.length / store.PAGE_SIZE))
 );
 
+const PAGINATION_WINDOW = 5;
+const paginationPageNumbers = computed(() => {
+  const n = totalPages.value;
+  const p = page.value;
+  const w = Math.min(PAGINATION_WINDOW, n);
+  let start = p - Math.floor(w / 2);
+  start = Math.max(1, Math.min(start, n - w + 1));
+  return Array.from({ length: w }, (_, i) => start + i);
+});
+
 watch(
   () => [store.stage3Search, store.stage3LevelFilter, store.stage3TypeFilter, store.stage3DiffFilter],
   () => { store.stage3Page = 1; }
@@ -72,7 +82,7 @@ function openQuestion(q: import('@/types/pipeline').Question) {
 </script>
 
 <template>
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+  <main class="max-w-[90rem] mx-auto px-4 sm:px-6 py-6 space-y-5">
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <div class="grid grid-cols-2 gap-4">
         <div
@@ -490,17 +500,17 @@ function openQuestion(q: import('@/types/pipeline').Question) {
             ‹
           </button>
           <button
-            v-for="idx in Math.min(5, totalPages)"
-            :key="idx"
+            v-for="pn in paginationPageNumbers"
+            :key="pn"
             :class="[
               'px-2 py-1 text-xs rounded',
-              page === Math.max(1, Math.min(totalPages, page - 2 + idx))
+              page === pn
                 ? 'bg-brand-500 text-white'
                 : 'text-slate-600 hover:bg-slate-100',
             ]"
-            @click="setPage(Math.max(1, Math.min(totalPages, page - 2 + idx)))"
+            @click="setPage(pn)"
           >
-            {{ Math.max(1, Math.min(totalPages, page - 2 + idx)) }}
+            {{ pn }}
           </button>
           <button
             :disabled="page >= totalPages"

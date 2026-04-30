@@ -71,7 +71,7 @@ const subcatPieEntries = computed(() => {
 </script>
 
 <template>
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+  <main class="max-w-[90rem] mx-auto px-4 sm:px-6 py-6 space-y-5">
     <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <div
         v-for="(c, i) in [

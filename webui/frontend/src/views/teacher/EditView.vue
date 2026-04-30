@@ -32,13 +32,53 @@ interface ItemRow {
   [k: string]: unknown;
 }
 
-const STAGES = [
-  { value: '3_8_mcq_verified', label: '3.8 MCQ Verify' },
-  { value: '3_7_translated', label: '3.7 Translated' },
-  { value: '3_4_domain_refined', label: '3.4 Domain Refined' },
-];
+// 与 ExportView 保持一致的阶段映射（只列有题目产物的阶段，纯检查阶段不列入）
+const EXPORTABLE_STAGE_MAP: Record<string, { id: string; label: string }> = {
+  '3.8 选择题格式检查':   { id: '3_8_mcq_verified',                        label: '3.8 选择题格式检查' },
+  '3.7 多语言翻译':      { id: '3_7_translated',                          label: '3.7 多语言翻译' },
+  '3.6 题库增强':        { id: '3_6_synthesized',                          label: '3.6 题库增强' },
+  '3.5 去除重复题目':    { id: '3_5_deduplicated',                        label: '3.5 去除重复题目' },
+  '3.4 考察领域修正':    { id: '3_4_domain_refined',                      label: '3.4 考察领域修正' },
+  '3.2 题意模糊修正':    { id: '3_2_ambiguity_refined',                   label: '3.2 题意模糊修正' },
+  '2.2 知识均衡检查与修正': { id: '2_1_generation/2_2_balanced',            label: '2.2 知识均衡检查与修正' },
+  '2.2 知识均衡检查':      { id: '2_1_generation/2_2_balanced',            label: '2.2 知识均衡检查' },
+  '2.1 题目生成':        { id: '2_1_generation/2_1_generated_stage_2',     label: '2.1 题目生成' },
+};
 
-const stage = ref(STAGES[0].value);
+type StageStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled';
+
+interface StageOption {
+  id: string;
+  label: string;
+  status: StageStatus;
+}
+
+const availableStages = ref<StageOption[]>([]);
+
+async function loadAvailableStages() {
+  try {
+    const { data } = await api.get(`/tasks/${encodeURIComponent(props.id)}`);
+    const progressStages: { name: string; status: StageStatus }[] = data?.progress?.stages ?? [];
+    const statusByName = new Map(progressStages.map((s) => [s.name, s.status]));
+
+    const result: StageOption[] = [];
+    for (const [stageName, { id, label }] of Object.entries(EXPORTABLE_STAGE_MAP)) {
+      const status = statusByName.get(stageName);
+      if (status === undefined) continue;
+      if (status === 'skipped') continue;
+      result.push({ id, label, status });
+    }
+    availableStages.value = result;
+
+    const firstSucceeded = result.find((s) => s.status === 'succeeded');
+    if (firstSucceeded) stage.value = firstSucceeded.id;
+    else if (result.length > 0) stage.value = result[0].id;
+  } catch {
+    // 降级：保持默认值
+  }
+}
+
+const stage = ref('3_8_mcq_verified');
 const files = ref<string[]>([]);
 const file = ref('');
 const rows = ref<ItemRow[]>([]);
@@ -365,6 +405,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  await loadAvailableStages();
   await loadFiles();
   await loadItems();
   window.addEventListener('keydown', onKeydown);
@@ -388,8 +429,20 @@ watch(file, async () => {
     <div class="flex items-center gap-3 flex-wrap mb-4">
       <label class="text-sm text-slate-600 flex items-center gap-2">
         阶段
-        <select v-model="stage" class="px-2 py-1.5 border border-slate-300 rounded-lg text-sm">
-          <option v-for="s in STAGES" :key="s.value" :value="s.value">{{ s.label }}</option>
+        <select
+          v-model="stage"
+          class="px-2 py-1.5 border border-slate-300 rounded-lg text-sm"
+          :disabled="availableStages.length === 0"
+        >
+          <option v-if="availableStages.length === 0" value="">（暂无可编辑阶段）</option>
+          <option
+            v-for="s in availableStages"
+            :key="s.id"
+            :value="s.id"
+            :disabled="s.status !== 'succeeded'"
+          >
+            {{ s.label }}{{ s.status !== 'succeeded' ? `（${s.status === 'pending' ? '尚未运行' : s.status === 'running' ? '运行中' : s.status === 'failed' ? '运行失败' : s.status}）` : '' }}
+          </option>
         </select>
       </label>
       <label class="text-sm text-slate-600 flex items-center gap-2 flex-1 min-w-[14rem]">

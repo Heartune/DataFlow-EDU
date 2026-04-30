@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 
@@ -11,6 +11,104 @@ const props = defineProps<{
 
 const router = useRouter();
 const COMPETENCY_CACHE_KEY = 'edu_competency_suggest_cache_v1';
+
+/** 预设 id（与后端 / YAML 一致）→ 界面展示名 */
+const PRESET_LABELS: Record<string, string> = {
+  // 高中学科
+  senior_biology: '高中生物',
+  senior_chinese: '高中语文',
+  senior_history: '高中历史',
+  senior_math: '高中数学',
+  senior_physics: '高中物理',
+  senior_english: '高中英语',
+  senior_chemistry: '高中化学',
+  senior_politics: '高中政治',
+  senior_geography: '高中地理',
+  // 初中学科
+  junior_chinese: '初中语文',
+  junior_math: '初中数学',
+  junior_english: '初中英语',
+  junior_physics: '初中物理',
+  junior_chemistry: '初中化学',
+  junior_biology: '初中生物',
+  junior_politics: '初中道德与法治',
+  junior_history: '初中历史',
+  junior_geography: '初中地理',
+};
+
+/** 预设 id → 一句话简介（浅显易懂） */
+const PRESET_DESCRIPTIONS: Record<string, string> = {
+  senior_biology:  '覆盖分子与细胞、遗传与进化、稳态与调节等，考察生命观念、科学探究等四大素养',
+  senior_chinese:  '覆盖古代诗文、现当代文学与写作思辨等，考察语言建构与文化传承等四大素养',
+  senior_history:  '中外通史，从古代文明到当代世界，考察史料实证、时空观念与家国情怀等素养',
+  senior_math:     '覆盖函数、导数、概率统计与几何向量等，考察数学抽象、逻辑推理等六大素养',
+  senior_physics:  '覆盖力学、电磁、热学与近代物理等，考察物理观念、科学思维与实验探究等素养',
+  senior_english:  '覆盖听说读写与跨文化交际等，以真实语境考察语言能力与思维品质',
+  senior_chemistry:'覆盖物质结构、反应原理与有机化学等，考察宏微辨识与证据推理等五大素养',
+  senior_politics: '覆盖经济、政治、文化与哲学等，考察政治认同、法治意识等四大核心素养',
+  senior_geography:'覆盖自然地理、人文地理与区域发展等，考察人地协调观与综合思维等核心素养',
+  junior_chinese:  '包括字词积累、古诗文阅读与各类写作训练等',
+  junior_math:     '包括数与代数、图形几何、一次/二次函数与概率初步等',
+  junior_english:  '基础词汇语法、日常对话与阅读理解，词汇量与语法难度对标初中课标',
+  junior_physics:  '考察力学、声光热、压强浮力等',
+  junior_chemistry:'考察物质构成、化学反应方程式与酸碱盐等',
+  junior_biology:  '包括生物与环境、细胞结构、遗传进化与生态保护等',
+  junior_politics: '涵盖青春期成长、法律常识与公民责任等，覆盖道德与法治全册内容',
+  junior_history:  '考察时空观念、史料实证与家国情怀等',
+  junior_geography:'地球地图基础、世界地理与中国自然人文地理等',
+};
+
+/** 学科卡片顺序：语数英物化生政史地（与 preset id 后缀一致，如 senior_chinese） */
+const PRESET_SUBJECT_ORDER = [
+  'chinese',
+  'math',
+  'english',
+  'physics',
+  'chemistry',
+  'biology',
+  'politics',
+  'history',
+  'geography',
+];
+
+function presetSubjectSortKey(id: string): number {
+  const m = id.match(/^(?:senior|junior)_(.+)$/);
+  if (!m) return PRESET_SUBJECT_ORDER.length;
+  const i = PRESET_SUBJECT_ORDER.indexOf(m[1]);
+  return i === -1 ? PRESET_SUBJECT_ORDER.length : i;
+}
+
+function sortPresetsBySubject(ids: string[]): string[] {
+  return [...ids].sort(
+    (a, b) => presetSubjectSortKey(a) - presetSubjectSortKey(b) || a.localeCompare(b),
+  );
+}
+
+function presetLabel(id: string): string {
+  return PRESET_LABELS[id] ?? id;
+}
+
+function presetDesc(id: string): string {
+  return PRESET_DESCRIPTIONS[id] ?? '';
+}
+
+/** 学科选择 Tab */
+const subjectTab = ref<'senior' | 'junior' | 'custom'>('senior');
+
+const seniorPresets = computed(() =>
+  sortPresetsBySubject(presets.value.filter((p) => p.startsWith('senior_'))),
+);
+const juniorPresets = computed(() =>
+  sortPresetsBySubject(presets.value.filter((p) => p.startsWith('junior_'))),
+);
+const otherPresets  = computed(() => presets.value.filter(p => !p.startsWith('senior_') && !p.startsWith('junior_')));
+
+const customPresetId = ref('');
+
+function applyCustomPreset() {
+  const id = customPresetId.value.trim();
+  if (id) applyPreset(id);
+}
 
 interface AbilityLevel {
   name: string;
@@ -46,6 +144,20 @@ const difficulty = ref<DifficultyDist>({ easy: 0.3, medium: 0.5, hard: 0.2 });
 const step = ref(1);
 const error = ref('');
 const info = ref('');
+let infoDismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showTransientInfo(message: string, ms = 3000) {
+  if (infoDismissTimer) {
+    clearTimeout(infoDismissTimer);
+    infoDismissTimer = null;
+  }
+  info.value = message;
+  infoDismissTimer = setTimeout(() => {
+    info.value = '';
+    infoDismissTimer = null;
+  }, ms);
+}
+
 const submitting = ref(false);
 const presetLoading = ref(false);
 const existingLoaded = ref(false);
@@ -54,7 +166,47 @@ const readonly = computed(() => {
   return props.taskStatus === 'running' || props.taskStatus === 'succeeded';
 });
 
-const totalSteps = 4;
+const totalSteps = 5;
+
+// ============== 步骤选择（Step 5）==============
+
+interface OptionalStage {
+  name: string;
+  desc: string;
+  pairName: string | null;
+}
+
+const OPTIONAL_STAGES: OptionalStage[] = [
+  { name: '2.2 知识均衡检查与修正', desc: '检查题目在各认知层级与知识领域的分布，并自动补题修正偏差', pairName: null },
+  { name: '3.1 题意模糊检查', desc: '识别表述不清晰的题目并标记，为下一步修正做准备', pairName: '3.2 题意模糊修正' },
+  { name: '3.2 题意模糊修正', desc: '对标记为模糊的题目重新润色，使题意清晰准确', pairName: '3.1 题意模糊检查' },
+  { name: '3.3 考察领域检查', desc: '校验题目所考察的知识点是否与教材范围吻合', pairName: '3.4 考察领域修正' },
+  { name: '3.4 考察领域修正', desc: '修正与教材范围不符或跑题的题目', pairName: '3.3 考察领域检查' },
+  { name: '3.5 去除重复题目', desc: '检测并剔除语义高度相似的重复题目', pairName: null },
+  { name: '3.6 题库增强', desc: '使用 AI 为每道题生成详细解题步骤（解析）', pairName: null },
+  { name: '3.7 多语言翻译', desc: '将题目翻译为英文、法文等多语言版本', pairName: null },
+  { name: '3.8 选择题格式检查', desc: '校验选择题的选项格式与答案标注是否规范', pairName: null },
+];
+
+const ALL_OPTIONAL_NAMES = new Set(OPTIONAL_STAGES.map((s) => s.name));
+const DEFAULT_DISABLED = new Set(['3.7 多语言翻译']);
+
+const enabledStages = ref<Set<string>>(
+  new Set(OPTIONAL_STAGES.map((s) => s.name).filter((n) => !DEFAULT_DISABLED.has(n))),
+);
+
+function toggleStage(s: OptionalStage) {
+  if (readonly.value) return;
+  const next = new Set(enabledStages.value);
+  if (next.has(s.name)) {
+    next.delete(s.name);
+    if (s.pairName) next.delete(s.pairName);
+  } else {
+    next.add(s.name);
+    if (s.pairName) next.add(s.pairName);
+  }
+  enabledStages.value = next;
+}
 
 async function loadPresets() {
   presetsLoading.value = true;
@@ -96,8 +248,11 @@ async function applyPreset(name: string) {
       };
     }
     selectedPreset.value = name;
-    info.value = `已加载 ${name} 预设默认值，可继续微调或跳过余下步骤`;
-    setTimeout(() => (info.value = ''), 3000);
+    // 自动切换到对应分组 tab
+    if (name.startsWith('senior_')) subjectTab.value = 'senior';
+    else if (name.startsWith('junior_')) subjectTab.value = 'junior';
+    else subjectTab.value = 'custom';
+    showTransientInfo(`已加载 ${presetLabel(name)} 预设默认值，可继续微调或跳过余下步骤`);
   } catch (err: any) {
     error.value = err?.response?.data?.error || err?.message || '加载预设失败';
   } finally {
@@ -131,6 +286,17 @@ async function loadExistingConfig() {
           medium: Number(cfg.difficulty_distribution.medium ?? 0.5),
           hard: Number(cfg.difficulty_distribution.hard ?? 0.2),
         };
+      }
+      if (cfg.preset && typeof cfg.preset === 'string') {
+        selectedPreset.value = cfg.preset;
+        if (cfg.preset.startsWith('senior_')) subjectTab.value = 'senior';
+        else if (cfg.preset.startsWith('junior_')) subjectTab.value = 'junior';
+        else subjectTab.value = 'custom';
+      }
+      if (Array.isArray(cfg.enabled_stages)) {
+        const saved = new Set<string>(cfg.enabled_stages.filter((n: unknown) => typeof n === 'string'));
+        // 只恢复在 OPTIONAL_STAGES 中定义的条目
+        enabledStages.value = new Set([...saved].filter((n) => ALL_OPTIONAL_NAMES.has(n)));
       }
       existingLoaded.value = true;
     }
@@ -287,7 +453,7 @@ async function fetchSuggest() {
     const code = err?.response?.data?.error;
     const msg = err?.response?.data?.message;
     if (code === 'missing_llm_key') {
-      suggestError.value = '本地未保存 LLM Key，请回到「新建任务」页填写后重试';
+      suggestError.value = 'LLM Key 未配置，请联系管理员';
     } else if (code === 'rate_limited') {
       suggestError.value = msg || '调用过于频繁，请稍后再试';
     } else if (code === 'needs_too_long') {
@@ -334,8 +500,7 @@ function applySelectedSuggestions() {
       target.description = it.description;
     }
   }
-  info.value = `已合并 ${picked.length} 条联网素养建议`;
-  setTimeout(() => (info.value = ''), 3000);
+  showTransientInfo(`已合并 ${picked.length} 条联网素养建议`);
   closeSuggest();
 }
 function removeQT(idx: number) {
@@ -375,6 +540,7 @@ async function saveAndRun() {
         ability_levels: abilityLevels.value,
         question_types: questionTypes.value,
         difficulty_distribution: difficulty.value,
+        enabled_stages: [...enabledStages.value],
       },
     });
     if (!readonly.value) {
@@ -388,7 +554,7 @@ async function saveAndRun() {
     } else if (code === 'user_has_running_task') {
       error.value = '你已有任务在跑，等它结束后再启动新任务';
     } else if (code === 'missing_llm_key') {
-      error.value = 'LLM Key 缺失，请先回到「新建任务」页填写以保存到本地';
+      error.value = 'LLM Key 未配置，请联系管理员';
     } else {
       error.value = err?.response?.data?.message || err?.message || '提交失败';
     }
@@ -413,10 +579,10 @@ async function saveOnly() {
         ability_levels: abilityLevels.value,
         question_types: questionTypes.value,
         difficulty_distribution: difficulty.value,
+        enabled_stages: [...enabledStages.value],
       },
     });
-    info.value = '配置已保存到任务目录';
-    setTimeout(() => (info.value = ''), 2500);
+    showTransientInfo('配置已保存到任务目录', 2500);
   } catch (err: any) {
     error.value = err?.response?.data?.error || err?.response?.data?.message || err?.message || '保存失败';
   } finally {
@@ -427,6 +593,10 @@ async function saveOnly() {
 onMounted(async () => {
   await loadPresets();
   await loadExistingConfig();
+});
+
+onUnmounted(() => {
+  if (infoDismissTimer) clearTimeout(infoDismissTimer);
 });
 </script>
 
@@ -471,38 +641,162 @@ onMounted(async () => {
       </div>
 
       <p v-if="error" class="text-sm text-rose-600 mb-3">{{ error }}</p>
-      <p v-if="info" class="text-sm text-emerald-600 mb-3">{{ info }}</p>
 
       <!-- Step 1: Subject -->
       <section v-if="step === 1">
         <h2 class="text-lg font-semibold text-slate-900 mb-1">第 1 步 · 选择学科</h2>
         <p class="text-sm text-slate-500 mb-4">
-          学科决定了知识体系（taxonomy）与默认认知层级，是必选项。后续 3 步将以学科预设为起点。
+          学科决定了知识体系与默认认知层级，是必选项。后续 4 步将以学科预设为起点。
         </p>
-        <div v-if="presetsLoading" class="text-slate-500">加载中...</div>
+
+        <div v-if="presetsLoading" class="text-slate-500 py-4">加载中...</div>
         <div v-else-if="!presets.length" class="text-slate-500">
           暂无预设，请先去 <router-link to="/admin" class="text-slate-900 underline">管理员看板</router-link> 创建预设。
         </div>
-        <div v-else class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <button
-            v-for="p in presets"
-            :key="p"
-            type="button"
-            :class="[
-              'border rounded-xl p-4 text-left transition',
-              selectedPreset === p
-                ? 'border-slate-900 bg-slate-50'
-                : 'border-slate-200 hover:border-slate-400',
-            ]"
-            :disabled="readonly || presetLoading"
-            @click="applyPreset(p)"
-          >
-            <div class="font-medium text-slate-900">{{ p }}</div>
-            <div class="text-xs text-slate-500 mt-1">
-              {{ selectedPreset === p ? '✓ 已选用' : '点击选择' }}
+        <template v-else>
+          <!-- 分组 Tab -->
+          <div class="flex gap-1 mb-5 border-b border-slate-200">
+            <button
+              v-for="tab in [
+                { id: 'senior', label: '高中', count: seniorPresets.length },
+                { id: 'junior', label: '初中', count: juniorPresets.length },
+                { id: 'custom', label: '自定义', count: otherPresets.length },
+              ]"
+              :key="tab.id"
+              type="button"
+              :class="[
+                'px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors',
+                subjectTab === tab.id
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700',
+              ]"
+              @click="subjectTab = tab.id as typeof subjectTab"
+            >
+              {{ tab.label }}
+              <span
+                v-if="tab.count"
+                :class="[
+                  'ml-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded-full font-semibold',
+                  subjectTab === tab.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500',
+                ]"
+              >{{ tab.count }}</span>
+            </button>
+          </div>
+
+          <!-- 高中 -->
+          <div v-show="subjectTab === 'senior'" class="grid grid-cols-1 gap-3">
+            <button
+              v-for="p in seniorPresets"
+              :key="p"
+              type="button"
+              :class="[
+                'border rounded-xl p-4 text-left transition group',
+                selectedPreset === p
+                  ? 'border-slate-900 bg-slate-50 shadow-sm'
+                  : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50/60',
+              ]"
+              :disabled="readonly || presetLoading"
+              @click="applyPreset(p)"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <span class="font-semibold text-slate-900 text-sm leading-snug">{{ presetLabel(p) }}</span>
+                <span
+                  v-if="selectedPreset === p"
+                  class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-emerald-500 text-white text-[11px] grid place-items-center"
+                >✓</span>
+              </div>
+              <p class="mt-1.5 text-[12px] leading-relaxed text-slate-500 line-clamp-3">
+                {{ presetDesc(p) }}
+              </p>
+            </button>
+          </div>
+
+          <!-- 初中 -->
+          <div v-show="subjectTab === 'junior'" class="grid grid-cols-1 gap-3">
+            <button
+              v-for="p in juniorPresets"
+              :key="p"
+              type="button"
+              :class="[
+                'border rounded-xl p-4 text-left transition group',
+                selectedPreset === p
+                  ? 'border-slate-900 bg-slate-50 shadow-sm'
+                  : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50/60',
+              ]"
+              :disabled="readonly || presetLoading"
+              @click="applyPreset(p)"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <span class="font-semibold text-slate-900 text-sm leading-snug">{{ presetLabel(p) }}</span>
+                <span
+                  v-if="selectedPreset === p"
+                  class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-emerald-500 text-white text-[11px] grid place-items-center"
+                >✓</span>
+              </div>
+              <p class="mt-1.5 text-[12px] leading-relaxed text-slate-500 line-clamp-3">
+                {{ presetDesc(p) }}
+              </p>
+            </button>
+          </div>
+
+          <!-- 自定义 -->
+          <div v-show="subjectTab === 'custom'" class="space-y-4">
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600 leading-relaxed">
+              <p class="font-medium text-slate-800 mb-1">使用自定义预设</p>
+              <p>在下方输入预设 ID（即 <code class="bg-white border border-slate-200 rounded px-1 text-xs">presets/</code> 目录下的 YAML 文件名，不含后缀），系统会自动加载对应的知识体系、题型与核心素养配置。</p>
+              <p class="mt-1.5 text-slate-500">例如：管理员通过 <code class="bg-white border border-slate-200 rounded px-1 text-xs">POST /admin/config/presets/:name</code> 新建的学科，或手动放入 <code class="bg-white border border-slate-200 rounded px-1 text-xs">presets/</code> 目录的文件，都可在此直接使用。</p>
             </div>
-          </button>
-        </div>
+
+            <!-- 其他已有预设（非 junior_ / senior_ 的）-->
+            <div v-if="otherPresets.length" class="grid grid-cols-1 gap-3">
+              <button
+                v-for="p in otherPresets"
+                :key="p"
+                type="button"
+                :class="[
+                  'border rounded-xl p-4 text-left transition',
+                  selectedPreset === p
+                    ? 'border-slate-900 bg-slate-50 shadow-sm'
+                    : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50/60',
+                ]"
+                :disabled="readonly || presetLoading"
+                @click="applyPreset(p)"
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <span class="font-semibold text-slate-900 text-sm">{{ presetLabel(p) }}</span>
+                  <span
+                    v-if="selectedPreset === p"
+                    class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-emerald-500 text-white text-[11px] grid place-items-center"
+                  >✓</span>
+                </div>
+                <p class="mt-1 text-[12px] text-slate-500">{{ presetDesc(p) || '自定义预设' }}</p>
+              </button>
+            </div>
+
+            <!-- 手动输入 -->
+            <div class="flex items-center gap-2">
+              <input
+                v-model="customPresetId"
+                type="text"
+                class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-slate-900"
+                placeholder="输入预设 ID，如 my_subject"
+                :disabled="readonly || presetLoading"
+                @keydown.enter="applyCustomPreset"
+              />
+              <button
+                type="button"
+                class="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap"
+                :disabled="!customPresetId.trim() || readonly || presetLoading"
+                @click="applyCustomPreset"
+              >
+                加载
+              </button>
+            </div>
+            <p v-if="selectedPreset && !selectedPreset.startsWith('senior_') && !selectedPreset.startsWith('junior_')" class="text-xs text-emerald-600">
+              ✓ 已加载自定义预设：{{ selectedPreset }}
+            </p>
+          </div>
+        </template>
       </section>
 
       <!-- Step 2: Ability levels -->
@@ -513,14 +807,14 @@ onMounted(async () => {
             v-if="!readonly"
             type="button"
             class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:border-slate-900 hover:bg-slate-50"
-            title="联网检索权威课程标准，给当前学科 + 教材生成结构化素养候选"
+            title="联网检索权威课程标准，为当前学科和教材生成结构化核心素养建议"
             @click="openSuggest"
           >
-            联网建议（找不到匹配）
+            通过大模型联网搜索课标，给出建议
           </button>
         </div>
         <p class="text-sm text-slate-500 mb-4">
-          决定题目的认知层级分布。权重为相对值，无需必须等于 1（合计 {{ sumAbility.toFixed(2) }}）。
+          决定题目的认知层级分布。权重为相对值，无需加总为 1（当前合计 {{ sumAbility.toFixed(2) }}）。
         </p>
         <div class="space-y-3">
           <div
@@ -669,6 +963,57 @@ onMounted(async () => {
         </div>
       </section>
 
+      <!-- Step 5: Pipeline Steps -->
+      <section v-else-if="step === 5">
+        <h2 class="text-lg font-semibold text-slate-900 mb-1">第 5 步 · 流水线步骤</h2>
+        <p class="text-sm text-slate-500 mb-4">
+          选择需要执行的后处理步骤。未选中的步骤将被跳过，数据自动传递给下一个启用的步骤。
+          <span class="text-amber-600">3.1+3.2 与 3.3+3.4 为绑定对，同开同关。</span>
+        </p>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div
+            v-for="s in OPTIONAL_STAGES"
+            :key="s.name"
+            :class="[
+              'border rounded-xl p-4 flex items-start gap-3 transition',
+              readonly ? 'cursor-default' : 'cursor-pointer',
+              enabledStages.has(s.name)
+                ? 'border-slate-900 bg-slate-50'
+                : 'border-slate-200 hover:border-slate-400',
+            ]"
+            @click="toggleStage(s)"
+          >
+            <div
+              :class="[
+                'mt-0.5 w-5 h-5 rounded flex-shrink-0 border-2 flex items-center justify-center transition',
+                enabledStages.has(s.name)
+                  ? 'border-slate-900 bg-slate-900'
+                  : 'border-slate-300 bg-white',
+              ]"
+            >
+              <svg
+                v-if="enabledStages.has(s.name)"
+                class="w-3 h-3 text-white"
+                viewBox="0 0 12 12"
+                fill="none"
+              >
+                <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-slate-900 leading-snug">{{ s.name }}</p>
+              <p class="text-xs text-slate-500 mt-0.5 leading-snug">{{ s.desc }}</p>
+              <p v-if="s.pairName" class="text-xs text-amber-600 mt-1">
+                与「{{ s.pairName }}」联动
+              </p>
+            </div>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 mt-4">
+          已选 {{ enabledStages.size }} / {{ OPTIONAL_STAGES.length }} 个可选步骤（另有 1.1 PDF 转图片 · 1.2 文字识别 · 2.1 题目生成 始终执行）
+        </p>
+      </section>
+
       <!-- 联网素养建议弹窗 -->
       <div
         v-if="suggestOpen"
@@ -680,7 +1025,8 @@ onMounted(async () => {
             <div>
               <h3 class="text-base font-semibold text-slate-900">联网检索核心素养</h3>
               <p class="text-xs text-slate-500 mt-0.5">
-                学科：{{ selectedPreset || '(未选择)' }} · 教材：{{ taskName || '(无)' }}
+                学科：{{ selectedPreset ? presetLabel(selectedPreset) : '(未选择)' }} ·
+                教材：{{ taskName || '(无)' }}
               </p>
             </div>
             <button
@@ -820,5 +1166,58 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <Transition name="dfedu-toast">
+      <div
+        v-if="info"
+        class="dfedu-toast-panel fixed bottom-6 right-4 sm:right-6 z-[100] max-w-[min(16.8rem,calc(100vw-2rem))] rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900 shadow-lg shadow-slate-900/10 pointer-events-none will-change-transform"
+        role="status"
+        aria-live="polite"
+      >
+        {{ info }}
+      </div>
+    </Transition>
   </div>
 </template>
+
+<style>
+/*
+ * Toast 动画：须 unscoped（Transition 挂的动态类名与 scoped 组合易不生效）。
+ * style.css 在 prefers-reduced-motion:reduce 下对 * 使用 transition-duration:!important，
+ * 故此处对 -enter/-leave-active 显式写 duration !important，reduce 分支仅保留淡入淡出。
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .dfedu-toast-enter-from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0) scale(0.92);
+  }
+  .dfedu-toast-leave-to {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.96);
+  }
+  .dfedu-toast-enter-active {
+    transition-property: opacity, transform !important;
+    transition-duration: 0.45s !important;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1) !important;
+  }
+  .dfedu-toast-leave-active {
+    transition-property: opacity, transform !important;
+    transition-duration: 0.28s !important;
+    transition-timing-function: ease-in !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dfedu-toast-enter-from,
+  .dfedu-toast-leave-to {
+    opacity: 0;
+    transform: none;
+  }
+  .dfedu-toast-enter-active,
+  .dfedu-toast-leave-active {
+    transition-property: opacity !important;
+    transition-duration: 0.22s !important;
+    transition-timing-function: ease !important;
+  }
+}
+</style>

@@ -26,6 +26,7 @@ async function submit() {
   } catch (err: any) {
     const msg = err?.response?.data?.error;
     if (msg === 'invalid_credentials') error.value = '邮箱或密码错误';
+    else if (msg === 'pending_approval') error.value = '账号正在等待管理员审批，请稍后再试';
     else error.value = err?.message || '登录失败';
   } finally {
     loading.value = false;
@@ -37,7 +38,7 @@ async function submit() {
   <div class="min-h-screen grid place-items-center bg-slate-50">
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm w-full max-w-md p-8">
       <h1 class="text-xl font-bold text-slate-900 mb-1">教师端登录</h1>
-      <p class="text-sm text-slate-500 mb-6">DataFlow-EDU · 中学学科语料生产</p>
+      <p class="text-sm text-slate-500 mb-6">DataFlow-EDU · 一份教材，自动生成结构化题库</p>
       <form @submit.prevent="submit" class="space-y-4">
         <div>
           <label class="block text-sm text-slate-600 mb-1">邮箱</label>
