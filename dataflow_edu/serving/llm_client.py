@@ -31,6 +31,23 @@ def _pad_to_display(s: str, width: int) -> str:
 
 RETRY_DELAY = 2
 
+# ======================== 全局 token 用量累计（线程安全）========================
+_USAGE_LOCK = threading.Lock()
+_USAGE_TOTAL: int = 0
+
+
+def _add_usage(tokens: int) -> None:
+    global _USAGE_TOTAL
+    with _USAGE_LOCK:
+        _USAGE_TOTAL += tokens
+
+
+def get_total_tokens() -> int:
+    """返回本进程内所有 call_llm 调用累计的 total_tokens。"""
+    with _USAGE_LOCK:
+        return _USAGE_TOTAL
+
+
 # ======================== 配置持久化 ========================
 
 _GEN_SCRIPT_DIR = Path(__file__).resolve().parent
@@ -508,6 +525,9 @@ def call_llm(
             if isinstance(content, str):
                 content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
             usage = getattr(resp, "usage", None)
+            total_tok = getattr(usage, "total_tokens", None)
+            if total_tok:
+                _add_usage(int(total_tok))
             # 简单日志（用 tqdm.write 避免与进度条同一行）
             tqdm.write(
                 f"[API] OK | key={key_tag} | {elapsed:.2f}s | "

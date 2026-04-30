@@ -20,6 +20,7 @@ from dataflow.utils.registry import OPERATOR_REGISTRY
 
 from dataflow_edu.config.schema import EduConfig, MCQVerifyConfig
 from dataflow_edu.mcq_verify.core import (
+    _find_input_file,
     _scan_mcq_candidates,
     run_mcq_verify,
 )
@@ -188,9 +189,9 @@ class MCQVerifyOperator(OperatorABC):
             return False, None, None
 
         selected = candidates[idx - 1]
-        input_path = os.path.join(input_dir_resolved, f"{selected}_translated.json")
-        if not os.path.isfile(input_path):
-            print(f"输入文件不存在: {input_path}")
+        input_path = _find_input_file(input_dir_resolved, selected)
+        if not input_path:
+            print(f"输入文件不存在（{input_dir_resolved}/{selected}_*.json）")
             return False, None, None
 
         if not interactive_config_llm(gen_config_max_workers=mcq_cfg.max_workers):

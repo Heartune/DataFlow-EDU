@@ -334,15 +334,52 @@ def _repair_with_llm(
 # ======================== 候选扫描 / 数据 IO ========================
 
 
+# 各阶段问题 JSON 文件后缀（优先级从高到低）
+_QUESTION_SUFFIXES: List[str] = [
+    "_translated.json",
+    "_synthesized.json",
+    "_deduplicated.json",
+    "_domain_refined.json",
+    "_domain_cleaned.json",
+    "_ambiguity_refined.json",
+    "_ambiguity_cleaned.json",
+    "_balanced_questions.json",
+    "_generated_questions.json",
+]
+
+
 def _scan_mcq_candidates(input_dir: str) -> List[str]:
-    """扫描 input_dir 下 *_translated.json，返回教材名列表。"""
+    """扫描 input_dir 下的问题 JSON 文件，返回教材名列表。
+
+    支持多种上游阶段的文件命名格式，不再限定必须为 *_translated.json。
+    同一教材名只取最高优先级后缀对应的文件。
+    """
     if not os.path.isdir(input_dir):
         return []
+    seen: set = set()
     out: List[str] = []
     for fname in sorted(os.listdir(input_dir)):
-        if fname.endswith("_translated.json"):
-            out.append(fname.replace("_translated.json", ""))
+        for suffix in _QUESTION_SUFFIXES:
+            if fname.endswith(suffix):
+                name = fname[: -len(suffix)]
+                if name and name not in seen:
+                    seen.add(name)
+                    out.append(name)
+                break
     return out
+
+
+def _find_input_file(input_dir: str, name: str) -> Optional[str]:
+    """在 input_dir 中查找指定教材名对应的问题 JSON 文件。
+
+    按 _QUESTION_SUFFIXES 优先级顺序依次尝试，返回第一个存在的路径；
+    全部不存在时返回 None。
+    """
+    for suffix in _QUESTION_SUFFIXES:
+        path = os.path.join(input_dir, f"{name}{suffix}")
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 def _load_input(input_path: str) -> Tuple[List[dict], dict]:

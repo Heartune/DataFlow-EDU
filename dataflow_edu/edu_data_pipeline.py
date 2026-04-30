@@ -7,6 +7,7 @@ DataFlow-EDU 主管线：命令行交互式选择并执行各 Workflow 步骤。
 
 import os
 import sys
+from pathlib import Path
 
 # 确保项目根目录在路径中
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,7 +65,41 @@ def run_mineru_ocr():
         enable_formula=mp.enable_formula,
         enable_table=mp.enable_table,
     )
-    op.run(storage=None, img_dir=img_dir, md_dir=md_dir)
+    ts, tf = op.run(storage=None, img_dir=img_dir, md_dir=md_dir)
+
+    # mineru_ocr 在整批失败时常仅打日志、不抛异常；由 task_runner 的 sentinel 会变成含糊的 “no output matched”
+    md_n = sum(1 for p in Path(md_dir).rglob("*.md") if p.is_file())
+    if md_n == 0:
+        if not (os.getenv("MINERU_API_KEY") or "").strip():
+            raise RuntimeError(
+                "MinerU 未生成任何 Markdown：未配置 MINERU_API_KEY。请在项目根 .env 中设置，"
+                "并确保运行 WebUI/任务子进程时该变量可用（与 LLM 密钥分开配置）。"
+            )
+        try:
+            book_dirs = [
+                n
+                for n in sorted(os.listdir(img_dir))
+                if os.path.isdir(os.path.join(img_dir, n))
+            ]
+        except OSError:
+            book_dirs = []
+        n_png_hint = ""
+        if book_dirs:
+            any_png = 0
+            for bd in book_dirs[:3]:
+                sub = Path(img_dir) / bd
+                for pat in ("*.png", "*.jpg", "*.jpeg"):
+                    any_png += sum(1 for _ in sub.glob(pat))
+            n_png_hint = f"；img 下子目录数={len(book_dirs)}（前 3 个子目录中 png/jpg 共 {any_png} 张）"
+        else:
+            n_png_hint = "；img 下无子目录，请先确认 1.1 已把 PDF 渲到 1_2_ocr/img/<教材名>/"
+        raise RuntimeError(
+            "MinerU 未在 md_dir 下写出任何 .md（算子统计：解析成功 "
+            f"{ts} 张、失败 {tf} 张）{n_png_hint}。"
+            f"img_dir={img_dir}；md_dir={md_dir}。"
+            "请打开本任务 runner.log 查「申请失败」「鉴权」上传「解析 failed」等；"
+            "并核对 MinerU 密钥是否有效、单张图 ≤10MB（超限需已安装 Pillow 以自动压缩）。"
+        )
 
 
 def run_generation():

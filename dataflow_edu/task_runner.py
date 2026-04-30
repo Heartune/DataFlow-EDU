@@ -203,11 +203,13 @@ class ProgressTracker:
         task_name: str,
         stages: list[str],
         preserved_states: dict[str, dict] | None = None,
+        disabled_stages: set[str] | None = None,
     ):
         self.task_dir = task_dir
         self.path = os.path.join(task_dir, "progress.json")
         os.makedirs(task_dir, exist_ok=True)
         preserved = preserved_states or {}
+        disabled = disabled_stages or set()
         stage_entries: list[dict[str, Any]] = []
         for s in stages:
             if s in preserved:
@@ -218,6 +220,8 @@ class ProgressTracker:
                 if ts.get("finished_at"):
                     entry["finished_at"] = ts["finished_at"]
                 stage_entries.append(entry)
+            elif s in disabled:
+                stage_entries.append({"name": s, "status": "skipped", "note": "已跳过"})
             else:
                 stage_entries.append({"name": s, "status": "pending"})
         self.state: dict[str, Any] = {
@@ -311,9 +315,15 @@ def _abs_under(task_dir: str, rel: str) -> str:
     return p
 
 
-def _override_config_paths(config, task_dir: str) -> None:
-    """把 config.operators 里所有 *_dir 改写到 task_dir 下的子目录。"""
+def _override_config_paths(config, task_dir: str, disabled_stages: "set[str] | None" = None) -> None:
+    """把 config.operators 里所有 *_dir 改写到 task_dir 下的子目录。
+
+    disabled_stages 非空时，动态计算 3.x 链路每个算子的 input_dir，
+    将被跳过步骤的输出"穿透"给下一个启用的步骤。
+    """
     ops = config.operators
+    disabled = disabled_stages or set()
+
     if "mineru_ocr" in ops:
         ops["mineru_ocr"].img_dir = _abs_under(task_dir, _LAYOUT["img_dir"])
         ops["mineru_ocr"].md_dir = _abs_under(task_dir, _LAYOUT["md_dir"])
@@ -323,31 +333,34 @@ def _override_config_paths(config, task_dir: str) -> None:
     if "balancing" in ops:
         # BalancingOperator 内部会写到 <output_dir>/2_2_balanced/，所以这里给的是 generation 根
         ops["balancing"].output_dir = _abs_under(task_dir, _LAYOUT["generation_output"])
-    if "ambiguity_cleaning" in ops:
-        # 3.1 真正吃的是 2.2 的产物 *_balanced_questions.json，必须指向 2_2_balanced 子目录
-        ops["ambiguity_cleaning"].input_dir = _abs_under(task_dir, _LAYOUT["balanced"])
-        ops["ambiguity_cleaning"].output_dir = _abs_under(task_dir, _LAYOUT["amb_clean"])
-    if "ambiguity_refinement" in ops:
-        ops["ambiguity_refinement"].input_dir = _abs_under(task_dir, _LAYOUT["amb_clean"])
-        ops["ambiguity_refinement"].output_dir = _abs_under(task_dir, _LAYOUT["amb_refine"])
-    if "domain_cleaning" in ops:
-        ops["domain_cleaning"].input_dir = _abs_under(task_dir, _LAYOUT["amb_refine"])
-        ops["domain_cleaning"].output_dir = _abs_under(task_dir, _LAYOUT["domain_clean"])
-    if "domain_refinement" in ops:
-        ops["domain_refinement"].input_dir = _abs_under(task_dir, _LAYOUT["domain_clean"])
-        ops["domain_refinement"].output_dir = _abs_under(task_dir, _LAYOUT["domain_refine"])
-    if "deduplication" in ops:
-        ops["deduplication"].input_dir = _abs_under(task_dir, _LAYOUT["domain_refine"])
-        ops["deduplication"].output_dir = _abs_under(task_dir, _LAYOUT["dedup"])
-    if "synthesis" in ops:
-        ops["synthesis"].input_dir = _abs_under(task_dir, _LAYOUT["dedup"])
-        ops["synthesis"].output_dir = _abs_under(task_dir, _LAYOUT["synthesis"])
-    if "translation" in ops:
-        ops["translation"].input_dir = _abs_under(task_dir, _LAYOUT["synthesis"])
-        ops["translation"].output_dir = _abs_under(task_dir, _LAYOUT["translation"])
-    if "mcq_verify" in ops:
-        ops["mcq_verify"].input_dir = _abs_under(task_dir, _LAYOUT["translation"])
-        ops["mcq_verify"].output_dir = _abs_under(task_dir, _LAYOUT["mcq_verify"])
+
+    # ── 3.x 链路：动态穿透跳过的步骤 ──────────────────────────────────────────
+    # 链路定义：(stage_name, op_key, output_layout_key)
+    _CHAIN_3X = [
+        ("3.1 题意模糊检查", "ambiguity_cleaning",   "amb_clean"),
+        ("3.2 题意模糊修正", "ambiguity_refinement", "amb_refine"),
+        ("3.3 考察领域检查", "domain_cleaning",      "domain_clean"),
+        ("3.4 考察领域修正", "domain_refinement",    "domain_refine"),
+        ("3.5 去除重复题目", "deduplication",        "dedup"),
+        ("3.6 题库增强",     "synthesis",            "synthesis"),
+        ("3.7 多语言翻译",   "translation",          "translation"),
+        ("3.8 选择题格式检查", "mcq_verify",         "mcq_verify"),
+    ]
+
+    # 链路起点：2.2 启用 → balanced 子目录；2.2 禁用 → 直接读 2.1 stage2 输出
+    if "2.2 知识均衡检查与修正" not in disabled:
+        current_input: str = _abs_under(task_dir, _LAYOUT["balanced"])
+    else:
+        current_input = _abs_under(task_dir, "2_1_generation/2_1_generated_stage_2")
+
+    for stage_name, op_key, out_key in _CHAIN_3X:
+        if op_key not in ops:
+            continue
+        ops[op_key].input_dir = current_input
+        if stage_name not in disabled:
+            ops[op_key].output_dir = _abs_under(task_dir, _LAYOUT[out_key])
+            current_input = ops[op_key].output_dir
+        # 禁用时：current_input 保持不变（穿透），output_dir 留原值（不会被写入）
 
 
 # ============================================================
@@ -357,18 +370,18 @@ def _override_config_paths(config, task_dir: str) -> None:
 # 阶段名 -> run_* 函数名（None 表示自定义阶段，由 task_runner 自己处理）
 # 注：M1 跑 PDF→Images -> OCR -> Generation -> Balancing -> 3.1~3.8（execute/judge 不纳入）
 STAGES: list[tuple[str, str | None]] = [
-    ("1.1 PDF→Images", None),
-    ("1.2 MinerU OCR", "run_mineru_ocr"),
-    ("2.1 Generation", "run_generation"),
-    ("2.2 Balancing", "run_balancing"),
-    ("3.1 Ambiguity Cleaning", "run_ambiguity_cleaning"),
-    ("3.2 Ambiguity Refinement", "run_ambiguity_refinement"),
-    ("3.3 Domain Cleaning", "run_domain_cleaning"),
-    ("3.4 Domain Refinement", "run_domain_refinement"),
-    ("3.5 Deduplication", "run_deduplication"),
-    ("3.6 Synthesis", "run_synthesis"),
-    ("3.7 Translation", "run_translation"),
-    ("3.8 MCQ Verify", "run_mcq_verify"),
+    ("1.1 PDF转图片", None),
+    ("1.2 文字识别", "run_mineru_ocr"),
+    ("2.1 题目生成", "run_generation"),
+    ("2.2 知识均衡检查与修正", "run_balancing"),
+    ("3.1 题意模糊检查", "run_ambiguity_cleaning"),
+    ("3.2 题意模糊修正", "run_ambiguity_refinement"),
+    ("3.3 考察领域检查", "run_domain_cleaning"),
+    ("3.4 考察领域修正", "run_domain_refinement"),
+    ("3.5 去除重复题目", "run_deduplication"),
+    ("3.6 题库增强", "run_synthesis"),
+    ("3.7 多语言翻译", "run_translation"),
+    ("3.8 选择题格式检查", "run_mcq_verify"),
 ]
 
 
@@ -376,39 +389,40 @@ STAGES: list[tuple[str, str | None]] = [
 # 否则视为静默失败（算子里只 logger.warning + return False, 不抛异常的场景）。
 # None 表示该阶段不做后置检查。
 _STAGE_SENTINELS: dict[str, str | None] = {
-    "1.1 PDF→Images": "1_2_ocr/img/*/page_*.png",
-    "1.2 MinerU OCR": "1_2_ocr/md/*/page_*.md",
-    "2.1 Generation": "2_1_generation/2_1_generated_stage_2/*_generated_questions.json",
-    "2.2 Balancing": "2_1_generation/2_2_balanced/*_balanced_questions.json",
-    "3.1 Ambiguity Cleaning": "3_1_ambiguity_cleaned/*_ambiguity_cleaned.json",
-    "3.2 Ambiguity Refinement": "3_2_ambiguity_refined/*_ambiguity_refined.json",
-    "3.3 Domain Cleaning": "3_3_domain_cleaned/*_domain_cleaned.json",
-    "3.4 Domain Refinement": "3_4_domain_refined/*_domain_refined.json",
-    "3.5 Deduplication": "3_5_deduplicated/*_deduplicated.json",
-    "3.6 Synthesis": "3_6_synthesized/*_synthesized.json",
-    "3.7 Translation": "3_7_translated/*_translated.json",
-    "3.8 MCQ Verify": "3_8_mcq_verified/*_mcq_verified.json",
+    "1.1 PDF转图片": "1_2_ocr/img/*/page_*.png",
+    # MinerU 输出名为「与源图同基名」.md，不限于 page_ 前缀
+    "1.2 文字识别": "1_2_ocr/md/*/*.md",
+    "2.1 题目生成": "2_1_generation/2_1_generated_stage_2/*_generated_questions.json",
+    "2.2 知识均衡检查与修正": "2_1_generation/2_2_balanced/*_balanced_questions.json",
+    "3.1 题意模糊检查": "3_1_ambiguity_cleaned/*_ambiguity_cleaned.json",
+    "3.2 题意模糊修正": "3_2_ambiguity_refined/*_ambiguity_refined.json",
+    "3.3 考察领域检查": "3_3_domain_cleaned/*_domain_cleaned.json",
+    "3.4 考察领域修正": "3_4_domain_refined/*_domain_refined.json",
+    "3.5 去除重复题目": "3_5_deduplicated/*_deduplicated.json",
+    "3.6 题库增强": "3_6_synthesized/*_synthesized.json",
+    "3.7 多语言翻译": "3_7_translated/*_translated.json",
+    "3.8 选择题格式检查": "3_8_mcq_verified/*_mcq_verified.json",
 }
 
 
 # 阶段产物目录（相对 task_dir）。续跑某 stage 前会把这些目录递归清掉，避免上次半成品干扰本次。
 # 新增 stage 时必须同步在这里登记，否则续跑会复用旧产物，看起来"瞬间通过"。
 _STAGE_OUTPUT_DIRS: dict[str, list[str]] = {
-    "1.1 PDF→Images": ["1_2_ocr/img"],
-    "1.2 MinerU OCR": ["1_2_ocr/md"],
-    "2.1 Generation": [
+    "1.1 PDF转图片": ["1_2_ocr/img"],
+    "1.2 文字识别": ["1_2_ocr/md"],
+    "2.1 题目生成": [
         "2_1_generation/2_1_generated_stage_1",
         "2_1_generation/2_1_generated_stage_2",
     ],
-    "2.2 Balancing": ["2_1_generation/2_2_balanced"],
-    "3.1 Ambiguity Cleaning": ["3_1_ambiguity_cleaned"],
-    "3.2 Ambiguity Refinement": ["3_2_ambiguity_refined"],
-    "3.3 Domain Cleaning": ["3_3_domain_cleaned"],
-    "3.4 Domain Refinement": ["3_4_domain_refined"],
-    "3.5 Deduplication": ["3_5_deduplicated"],
-    "3.6 Synthesis": ["3_6_synthesized"],
-    "3.7 Translation": ["3_7_translated"],
-    "3.8 MCQ Verify": ["3_8_mcq_verified"],
+    "2.2 知识均衡检查与修正": ["2_1_generation/2_2_balanced"],
+    "3.1 题意模糊检查": ["3_1_ambiguity_cleaned"],
+    "3.2 题意模糊修正": ["3_2_ambiguity_refined"],
+    "3.3 考察领域检查": ["3_3_domain_cleaned"],
+    "3.4 考察领域修正": ["3_4_domain_refined"],
+    "3.5 去除重复题目": ["3_5_deduplicated"],
+    "3.6 题库增强": ["3_6_synthesized"],
+    "3.7 多语言翻译": ["3_7_translated"],
+    "3.8 选择题格式检查": ["3_8_mcq_verified"],
 }
 
 
@@ -566,15 +580,25 @@ def _build_config_with_overrides(task_dir: str):
     return config
 
 
-def _patch_pipeline_module_for_task(task_dir: str) -> None:
+def _patch_pipeline_module_for_task(
+    task_dir: str,
+    disabled_stages: "set[str] | None" = None,
+) -> None:
     """
     将 dataflow_edu.edu_data_pipeline 模块内的 _PROJECT_ROOT-relative 配置加载，
     替换为我们已经 override 好的同一份 config（避免每个 run_* 重新 load 配置时丢失覆写）。
+
+    disabled_stages 非空时，重新对已 cached 的 config 调用一次带 disabled_stages 的
+    _override_config_paths，确保 3.x 链路的 input_dir 动态穿透跳过的步骤。
     """
     from dataflow_edu import edu_data_pipeline as edp
     from dataflow_edu.config import loader as _loader
 
     cached = _build_config_with_overrides(task_dir)
+    # 用 disabled_stages 重算一次路径（_build_config_with_overrides 里已调用了一次不带
+    # disabled_stages 的版本，这里覆盖那次的结果）
+    if disabled_stages:
+        _override_config_paths(cached, task_dir, disabled_stages=disabled_stages)
 
     def _patched_load_config(project_root: str | None = None):
         return cached
@@ -648,6 +672,28 @@ def _run_stage(
 # ============================================================
 
 
+def _write_task_meta(task_dir: str, pdf_path: str) -> None:
+    """提取 PDF 页数，写入 task_dir/task_meta.json，供后端 ETA 接口读取。"""
+    meta: dict[str, Any] = {}
+    try:
+        import pypdf  # type: ignore[import]
+        with open(pdf_path, "rb") as f:
+            reader = pypdf.PdfReader(f)
+            meta["pdf_pages"] = len(reader.pages)
+    except Exception:
+        try:
+            # 回退：从文件名暗示的类似大小估算不靠谱，直接跳过
+            pass
+        except Exception:
+            pass
+    meta_path = os.path.join(task_dir, "task_meta.json")
+    try:
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[runner] write task_meta failed: {e}", flush=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser("dataflow_edu.task_runner")
     parser.add_argument("--task-id", required=True)
@@ -679,6 +725,28 @@ def main() -> int:
 
     stage_names = [s[0] for s in STAGES]
 
+    # ── 读取用户在向导中选择的步骤白名单 ──────────────────────────────────────
+    # 强制不可跳过的步骤（OCR + 生成）
+    _MANDATORY = {"1.1 PDF转图片", "1.2 文字识别", "2.1 题目生成"}
+    _disabled_stages: set[str] = set()
+    _task_cfg_path = os.path.join(task_dir, "config.yaml")
+    if os.path.isfile(_task_cfg_path):
+        try:
+            import yaml as _yaml_mod
+            with open(_task_cfg_path, encoding="utf-8") as _f:
+                _raw_cfg = _yaml_mod.safe_load(_f) or {}
+            if isinstance(_raw_cfg.get("enabled_stages"), list):
+                _all_optional = {s[0] for s in STAGES} - _MANDATORY
+                _enabled_set = {n for n in _raw_cfg["enabled_stages"] if isinstance(n, str)}
+                _disabled_stages = _all_optional - _enabled_set
+                if _disabled_stages:
+                    print(
+                        f"[runner] 用户禁用步骤：{sorted(_disabled_stages)}",
+                        flush=True,
+                    )
+        except Exception as _e:
+            print(f"[runner] 读取 enabled_stages 失败 ({_e})，所有步骤全部执行", flush=True)
+
     # --reset 与 --resume-from 互斥；--reset 优先生效
     resume_from = (args.resume_from or "").strip()
     if args.reset:
@@ -698,12 +766,21 @@ def main() -> int:
             _wipe_stage_outputs(task_dir, resume_from)
 
     progress = ProgressTracker(
-        task_dir, args.task_id, safe_name, stage_names, preserved_states=preserved
+        task_dir,
+        args.task_id,
+        safe_name,
+        stage_names,
+        preserved_states=preserved,
+        disabled_stages=_disabled_stages,
     )
 
+    # 尝试提取 PDF 页数并写入 task_meta.json，供 ETA 估算使用
+    _write_task_meta(task_dir, os.path.abspath(args.input_pdf))
+
     # 注入配置 + LLM 非交互初始化（在所有 run 之前完成）
+    # 传入 disabled_stages，使 _override_config_paths 动态计算 3.x 链路 input_dir
     try:
-        _patch_pipeline_module_for_task(task_dir)
+        _patch_pipeline_module_for_task(task_dir, disabled_stages=_disabled_stages)
     except Exception as e:
         progress.stage_fail(stage_names[0], f"config inject: {e}")
         return 2
@@ -715,33 +792,51 @@ def main() -> int:
         return 2
 
     from dataflow_edu import edu_data_pipeline as edp
+    from dataflow_edu.serving.llm_client import get_total_tokens
 
-    for name, fn_name in STAGES:
-        if name in preserved:
-            print(f"========== [stage skip-preserved] {name} ==========", flush=True)
-            continue
-        if fn_name is None:
-            if name == "1.1 PDF→Images":
-                ok = _run_stage(
-                    progress,
-                    name,
-                    lambda: _pdf_to_images(safe_name, task_dir, os.path.abspath(args.input_pdf)),
-                    task_dir,
-                )
+    exit_code = 0
+    try:
+        for name, fn_name in STAGES:
+            if name in preserved:
+                print(f"========== [stage skip-preserved] {name} ==========", flush=True)
+                continue
+            if name in _disabled_stages:
+                # ProgressTracker 初始化时已标记为 skipped，无需再次调用
+                print(f"========== [stage skip-disabled] {name} ==========", flush=True)
+                continue
+            if fn_name is None:
+                if name == "1.1 PDF转图片":
+                    ok = _run_stage(
+                        progress,
+                        name,
+                        lambda: _pdf_to_images(safe_name, task_dir, os.path.abspath(args.input_pdf)),
+                        task_dir,
+                    )
+                else:
+                    progress.stage_skip(name, "no handler")
+                    continue
             else:
-                progress.stage_skip(name, "no handler")
-                continue
-        else:
-            fn = getattr(edp, fn_name, None)
-            if not callable(fn):
-                progress.stage_skip(name, f"missing handler {fn_name}")
-                continue
-            ok = _run_stage(progress, name, fn, task_dir)
-        if not ok:
-            return 1
+                fn = getattr(edp, fn_name, None)
+                if not callable(fn):
+                    progress.stage_skip(name, f"missing handler {fn_name}")
+                    continue
+                ok = _run_stage(progress, name, fn, task_dir)
+            if not ok:
+                exit_code = 1
+                break
 
-    progress.finish_ok()
-    return 0
+        if exit_code == 0:
+            progress.finish_ok()
+    finally:
+        # 无论成功/失败都写 token 用量，供服务端入库
+        try:
+            usage_path = os.path.join(task_dir, "task_usage.json")
+            with open(usage_path, "w", encoding="utf-8") as _uf:
+                json.dump({"total_tokens": get_total_tokens()}, _uf)
+        except Exception as _ue:
+            print(f"[runner] write task_usage.json failed: {_ue}", flush=True)
+
+    return exit_code
 
 
 if __name__ == "__main__":
