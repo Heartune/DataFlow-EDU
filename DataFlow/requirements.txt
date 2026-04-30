@@ -64,6 +64,7 @@ cloudpickle
 fastapi
 httpx
 pandas
+openpyxl
 psutil
 pyfiglet
 pyyaml
