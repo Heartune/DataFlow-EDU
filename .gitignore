@@ -106,9 +106,25 @@ yarn-error.log*
 webui/server/data/
 webui/server/.env
 webui/server/dist/
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# SQLite 热备份归档（webui/server/data/ 已覆盖默认位置；保留兜底）
+*.db.backup
+*.sqlite.backup
+*.sqlite3.backup
 
 # ===== 多用户任务工作目录 =====
 dataflow_edu/data/users/
+
+# ===== DataFlow-EDU 流水线生成产物 =====
+dataflow_edu/data/generation_and_balancing/
+dataflow_edu/data/cleaning_and_refinement/
+dataflow_edu/data/execute_and_judge/
 
 # ===== 含敏感信息的工具目录（仅允许轻量 remote mineru_ocr.py，其余忽略）=====
 utils_from_CNLaw-Bench/
