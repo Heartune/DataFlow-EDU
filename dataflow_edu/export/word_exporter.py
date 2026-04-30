@@ -14,8 +14,9 @@
 - 每个题号带题型缩写前缀，如「单选-1」「简答-3」；无法识别的题型取前 2 字。
 
 目录规则：
-- 在封面标题之后插入真·Word TOC 字段（1-2 级标题），dirty=true 以便 Word 打开时
-  自动提示更新页码和超链接。
+- 在封面标题之后插入真·Word TOC 字段（1-3 级标题），dirty=true 以便 Word/LibreOffice
+  打开或转换时刷新页码和超链接。
+- 字段结果里同时写入一份静态兜底目录，避免无字段刷新能力的 PDF 转换环境输出空目录。
 - 目录之后加分页符，确保正文从新页开始。
 
 中文字体在 docx 里非常坑：默认 Calibri 对中文不友好。这里强制全文（中文 east-asia
@@ -26,6 +27,11 @@
 from __future__ import annotations
 
 import os
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -86,8 +92,18 @@ _HEADINGS = {
 
 DEFAULT_FONT = "微软雅黑"
 
-# 需要统一字体的内置样式（Title 是封面大标题；Heading 1~3 是章节）
-_STYLES_TO_UNIFY = ("Normal", "Title", "Heading 1", "Heading 2", "Heading 3")
+# 需要统一字体的内置样式（Title 是封面大标题；Heading 1~3 是章节；TOC 是目录）
+_STYLES_TO_UNIFY = (
+    "Normal",
+    "Title",
+    "Heading 1",
+    "Heading 2",
+    "Heading 3",
+    "TOC Heading",
+    "TOC 1",
+    "TOC 2",
+    "TOC 3",
+)
 
 # 常见题型 → 缩写映射；未命中时截取前 2 个字
 _TYPE_ABBREV: Dict[str, str] = {
@@ -108,6 +124,11 @@ _TYPE_ABBREV: Dict[str, str] = {
     "应用题": "应用",
     "证明题": "证明",
 }
+
+QuestionItems = List[Tuple[str, QuestionRecord]]
+TypeGroup = List[Tuple[str, QuestionItems]]
+SubcategoryGroup = List[Tuple[str, TypeGroup]]
+GroupedQuestions = List[Tuple[str, SubcategoryGroup]]
 
 
 def _abbrev_type(typ: str) -> str:
@@ -164,7 +185,7 @@ def _set_east_asia_font(doc: DocxDocument, font_name: str = DEFAULT_FONT) -> Non
 
 def _grouped(
     records: List[QuestionRecord],
-) -> List[Tuple[str, List[Tuple[str, List[Tuple[str, List[Tuple[str, QuestionRecord]]]]]]]]:
+) -> GroupedQuestions:
     """按 category → subcategory → type 三级分组，最内层附上显示标签。
 
     标签格式为「题型缩写-subcategory内序号」，如 '单选-1'。
@@ -185,10 +206,10 @@ def _grouped(
     for cat, sub_map in raw.items():
         sub_list = []
         for sub, type_map in sub_map.items():
-            type_list: List[Tuple[str, List[Tuple[str, QuestionRecord]]]] = []
+            type_list: TypeGroup = []
             sub_local = 1
             for typ, recs in type_map.items():
-                items: List[Tuple[str, QuestionRecord]] = []
+                items: QuestionItems = []
                 for rec in recs:
                     items.append((_make_label(typ, sub_local), rec))
                     sub_local += 1
@@ -290,58 +311,296 @@ def _enable_update_fields_on_open(doc: DocxDocument) -> None:
     settings_elem.append(update_fields)
 
 
+def _toc_count_suffix(count: int, lang: str) -> str:
+    if lang == "zh":
+        return f"（{count}题）"
+    if lang == "fr":
+        return f" ({count} questions)"
+    return f" ({count} questions)"
+
+
+def _count_type_items(type_list: TypeGroup) -> int:
+    return sum(len(items) for _, items in type_list)
+
+
+def _count_sub_items(sub_list: SubcategoryGroup) -> int:
+    return sum(_count_type_items(type_list) for _, type_list in sub_list)
+
+
+def _append_field_char(run: Any, field_type: str, *, dirty: bool = False) -> None:
+    fld_char = OxmlElement("w:fldChar")
+    fld_char.set(qn("w:fldCharType"), field_type)
+    if dirty:
+        fld_char.set(qn("w:dirty"), "true")
+    run._r.append(fld_char)
+
+
+def _append_toc_instruction(run: Any) -> None:
+    instr = OxmlElement("w:instrText")
+    instr.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    instr.text = r" TOC \f \h \z "
+    run._r.append(instr)
+
+
+def _append_tc_field(paragraph: Any, text: str, level: int) -> None:
+    """在标题段落里追加隐藏 TC 字段，供 TOC 刷新后保留题量等自定义目录文案。"""
+
+    safe_text = text.replace('"', "'")
+    r_begin = paragraph.add_run()
+    _append_field_char(r_begin, "begin")
+
+    r_instr = paragraph.add_run()
+    instr = OxmlElement("w:instrText")
+    instr.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    instr.text = f' TC "{safe_text}" \\l {level} '
+    r_instr._r.append(instr)
+
+    r_end = paragraph.add_run()
+    _append_field_char(r_end, "end")
+
+
+def _add_paragraph_if_style_exists(doc: DocxDocument, style_name: str) -> Any:
+    try:
+        doc.styles[style_name]
+    except KeyError:
+        return doc.add_paragraph()
+    return doc.add_paragraph(style=style_name)
+
+
+def _add_toc_result_paragraph(
+    doc: DocxDocument,
+    text: str,
+    *,
+    level: int,
+    start_field: bool = False,
+    end_field: bool = False,
+) -> None:
+    """写入 TOC 字段的静态兜底结果段落。
+
+    正常情况下 Word/LibreOffice 会用真实 TOC 替换这些段落；如果转换环境不刷新字段，
+    PDF 至少仍有完整层级和题量信息，不会只剩一个空字段或提示文本。
+    """
+
+    p = _add_paragraph_if_style_exists(doc, f"TOC {level}")
+
+    p.paragraph_format.left_indent = Pt(18 * (level - 1))
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+
+    if start_field:
+        r_begin = p.add_run()
+        _append_field_char(r_begin, "begin", dirty=True)
+        r_instr = p.add_run()
+        _append_toc_instruction(r_instr)
+        r_sep = p.add_run()
+        _append_field_char(r_sep, "separate")
+
+    run = p.add_run(text)
+    if level == 1:
+        run.bold = True
+
+    if end_field:
+        r_end = p.add_run()
+        _append_field_char(r_end, "end")
+
+
+def _build_toc_fallback_entries(
+    grouped: GroupedQuestions,
+    *,
+    lang: str,
+    variant: str,
+    labels: Dict[str, str],
+) -> List[Tuple[int, str]]:
+    entries: List[Tuple[int, str]] = []
+
+    for cat, sub_list in grouped:
+        cat_text = _normalize_label(cat, labels["uncategorized"])
+        entries.append((1, f"{cat_text} {_toc_count_suffix(_count_sub_items(sub_list), lang)}"))
+        for sub, type_list in sub_list:
+            sub_text = _normalize_label(sub, labels["uncategorized"])
+            entries.append(
+                (2, f"{sub_text} {_toc_count_suffix(_count_type_items(type_list), lang)}")
+            )
+            for typ, items in type_list:
+                typ_text = _normalize_label(typ, labels["uncategorized"])
+                entries.append((3, f"{typ_text} {_toc_count_suffix(len(items), lang)}"))
+
+    if variant == VARIANT_BLANK and grouped:
+        entries.append((1, labels["answers_section"]))
+        for cat, sub_list in grouped:
+            cat_text = _normalize_label(cat, labels["uncategorized"])
+            entries.append((2, cat_text))
+            for sub, _ in sub_list:
+                sub_text = _normalize_label(sub, labels["uncategorized"])
+                entries.append((3, sub_text))
+
+    return entries
+
+
 def _insert_toc(
     doc: DocxDocument,
-    grouped: list,
+    grouped: GroupedQuestions,
     lang: str = "zh",
     variant: str = VARIANT_WITH_ANSWER,
     labels: Optional[Dict[str, str]] = None,
 ) -> None:
-    """插入纯静态目录（无 Word 字段），随后分页。
+    """插入可更新的 Word TOC 字段，随后分页。"""
 
-    使用普通段落 + 手动格式（加粗/缩进）模拟 TOC 1/TOC 2 外观，
-    在 Word、LibreOffice、PDF 中均可直接渲染，无需任何字段更新操作。
-    """
     if labels is None:
         labels = _HEADINGS.get(lang, _HEADINGS["zh"])
     toc_title = labels["toc_title"]
 
     # 目录标题
-    try:
-        doc.add_paragraph(toc_title, style="TOC Heading")
-    except KeyError:
-        p = doc.add_paragraph()
-        run = p.add_run(toc_title)
-        run.bold = True
-        run.font.size = Pt(14)
+    p_title = _add_paragraph_if_style_exists(doc, "TOC Heading")
+    p_title.paragraph_format.space_after = Pt(6)
+    run = p_title.add_run(toc_title)
+    run.bold = True
+    run.font.size = Pt(14)
 
-    # 一级条目：category（加粗，不缩进）
-    # 二级条目：subcategory（不加粗，左缩进 1 字符）
-    for cat, sub_list in grouped:
-        cat_text = _normalize_label(cat, labels["uncategorized"])
-        p1 = doc.add_paragraph()
-        p1.paragraph_format.space_before = Pt(4)
-        p1.paragraph_format.space_after = Pt(0)
-        r1 = p1.add_run(cat_text)
-        r1.bold = True
+    entries = _build_toc_fallback_entries(
+        grouped,
+        lang=lang,
+        variant=variant,
+        labels=labels,
+    )
+    if not entries:
+        entries = [(1, labels["uncategorized"])]
 
-        for sub, _ in sub_list:
-            sub_text = _normalize_label(sub, labels["uncategorized"])
-            p2 = doc.add_paragraph()
-            p2.paragraph_format.left_indent = Pt(20)
-            p2.paragraph_format.space_before = Pt(0)
-            p2.paragraph_format.space_after = Pt(0)
-            p2.add_run(sub_text)
-
-    if variant == VARIANT_BLANK:
-        p_ans = doc.add_paragraph()
-        p_ans.paragraph_format.space_before = Pt(4)
-        p_ans.paragraph_format.space_after = Pt(0)
-        r_ans = p_ans.add_run(labels["answers_section"])
-        r_ans.bold = True
+    for idx, (level, text) in enumerate(entries):
+        _add_toc_result_paragraph(
+            doc,
+            text,
+            level=level,
+            start_field=idx == 0,
+            end_field=idx == len(entries) - 1,
+        )
 
     # 目录后分页
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+
+def _resolve_soffice_bin() -> Optional[str]:
+    env = os.environ.get("LIBREOFFICE_BIN", "").strip()
+    if env and Path(env).is_file():
+        return env
+    for name in ("soffice", "libreoffice"):
+        found = shutil.which(name)
+        if found:
+            return found
+    if os.name == "nt":
+        for candidate in (
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ):
+            if Path(candidate).is_file():
+                return candidate
+    return None
+
+
+def _find_free_local_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def _refresh_toc_with_libreoffice(docx_path: Path, *, timeout: int = 90) -> bool:
+    """用 LibreOffice 排版引擎刷新 TOC 页码并保存 docx。
+
+    python-docx 不能计算页码；这里通过 UNO 打开文档、更新目录索引、保存。
+    LibreOffice/UNO 不可用时返回 False，保留可打开时自动更新的字段。
+    """
+
+    soffice = _resolve_soffice_bin()
+    if not soffice:
+        return False
+    try:
+        import uno
+        from com.sun.star.beans import PropertyValue
+    except Exception:
+        return False
+
+    def prop(name: str, value: Any) -> Any:
+        p = PropertyValue()
+        p.Name = name
+        p.Value = value
+        return p
+
+    with tempfile.TemporaryDirectory(prefix="edu_docx_refresh_") as tmp:
+        profile_dir = (Path(tmp) / ".lo_profile").resolve()
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        port = _find_free_local_port()
+        accept = f"socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext"
+        cmd = [
+            soffice,
+            f"-env:UserInstallation={profile_dir.as_uri()}",
+            "--headless",
+            "--norestore",
+            "--nologo",
+            "--nodefault",
+            "--nofirststartwizard",
+            f"--accept={accept}",
+        ]
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            local_ctx = uno.getComponentContext()
+            resolver = local_ctx.ServiceManager.createInstanceWithContext(
+                "com.sun.star.bridge.UnoUrlResolver",
+                local_ctx,
+            )
+            ctx = None
+            deadline = time.time() + timeout
+            last_error: Optional[Exception] = None
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                try:
+                    ctx = resolver.resolve(f"uno:{accept}")
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    time.sleep(0.25)
+            if ctx is None:
+                if last_error:
+                    return False
+                return False
+
+            desktop = ctx.ServiceManager.createInstanceWithContext(
+                "com.sun.star.frame.Desktop",
+                ctx,
+            )
+            doc = desktop.loadComponentFromURL(
+                docx_path.resolve().as_uri(),
+                "_blank",
+                0,
+                (prop("Hidden", True), prop("ReadOnly", False)),
+            )
+            if doc is None:
+                return False
+            try:
+                indexes = doc.getDocumentIndexes()
+                for i in range(indexes.getCount()):
+                    indexes.getByIndex(i).update()
+                try:
+                    doc.getTextFields().refresh()
+                except Exception:
+                    pass
+                doc.store()
+            finally:
+                doc.close(True)
+            return True
+        except Exception:
+            return False
+        finally:
+            proc.terminate()
+            try:
+                proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
 
 
 _BRAND_FOOTER = (
@@ -405,11 +664,29 @@ def export_word(
             p = doc.add_paragraph()
             p.add_run().add_break(WD_BREAK.PAGE)
 
-        doc.add_heading(_normalize_label(cat, labels["uncategorized"]), level=1)
+        cat_text = _normalize_label(cat, labels["uncategorized"])
+        cat_heading = doc.add_heading(cat_text, level=1)
+        _append_tc_field(
+            cat_heading,
+            f"{cat_text} {_toc_count_suffix(_count_sub_items(sub_list), lang)}",
+            1,
+        )
         for sub, type_list in sub_list:
-            doc.add_heading(_normalize_label(sub, labels["uncategorized"]), level=2)
+            sub_text = _normalize_label(sub, labels["uncategorized"])
+            sub_heading = doc.add_heading(sub_text, level=2)
+            _append_tc_field(
+                sub_heading,
+                f"{sub_text} {_toc_count_suffix(_count_type_items(type_list), lang)}",
+                2,
+            )
             for typ, items in type_list:
-                doc.add_heading(_normalize_label(typ, labels["uncategorized"]), level=3)
+                typ_text = _normalize_label(typ, labels["uncategorized"])
+                typ_heading = doc.add_heading(typ_text, level=3)
+                _append_tc_field(
+                    typ_heading,
+                    f"{typ_text} {_toc_count_suffix(len(items), lang)}",
+                    3,
+                )
                 for label, rec in items:
                     _add_question_body(doc, label, rec)
                     if variant == VARIANT_WITH_ANSWER:
@@ -424,12 +701,17 @@ def export_word(
         # 分页符（当前已有，保持）
         p = doc.add_paragraph()
         p.add_run().add_break(WD_BREAK.PAGE)
-        # level=1 使「参考答案与解析」被 TOC 收录（与 category 同级）
-        doc.add_heading(labels["answers_section"], level=1)
+        # TC level=1 使「参考答案与解析」在目录中与 category 同级。
+        answer_heading = doc.add_heading(labels["answers_section"], level=1)
+        _append_tc_field(answer_heading, labels["answers_section"], 1)
         for cat, sub_list in grouped:
-            doc.add_heading(_normalize_label(cat, labels["uncategorized"]), level=2)
+            cat_text = _normalize_label(cat, labels["uncategorized"])
+            cat_heading = doc.add_heading(cat_text, level=2)
+            _append_tc_field(cat_heading, cat_text, 2)
             for sub, type_list in sub_list:
-                doc.add_heading(_normalize_label(sub, labels["uncategorized"]), level=3)
+                sub_text = _normalize_label(sub, labels["uncategorized"])
+                sub_heading = doc.add_heading(sub_text, level=3)
+                _append_tc_field(sub_heading, sub_text, 3)
                 for typ, items in type_list:
                     for label, rec in items:
                         _add_question_answer(
@@ -438,8 +720,10 @@ def export_word(
                         doc.add_paragraph("")
 
     _add_brand_footer(doc)
+    _enable_update_fields_on_open(doc)
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out))
+    _refresh_toc_with_libreoffice(out)
     return out
