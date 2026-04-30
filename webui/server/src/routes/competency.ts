@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { spawn } from 'child_process';
+import { getDb, writeAuditLog } from '../db.js';
 
 const NEEDS_MAX_CHARS = 500;
 const RATE_LIMIT_PER_MIN = 5;
@@ -14,20 +16,38 @@ interface SuggestItem {
   source_url?: string;
 }
 
-// userId -> 最近请求时间戳数组（滑动窗口限流，仅进程内内存）
-const userHits = new Map<string, number[]>();
+const ROUTE_SUGGEST = '/api/competency/suggest';
 
+/** 持久化滑动窗口限流（存 DB，重启不丢失）。 */
 function checkRateLimit(userId: string): { ok: true } | { ok: false; retryAfterMs: number } {
+  const db = getDb();
   const now = Date.now();
-  const arr = (userHits.get(userId) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  if (arr.length >= RATE_LIMIT_PER_MIN) {
-    const earliest = arr[0];
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+
+  const row = db
+    .prepare(
+      'SELECT COUNT(*) as n, MIN(ts_ms) as earliest FROM rate_limit_hits WHERE user_id=? AND route=? AND ts_ms>?'
+    )
+    .get(userId, ROUTE_SUGGEST, windowStart) as { n: number; earliest: number | null };
+
+  if (row.n >= RATE_LIMIT_PER_MIN) {
+    const earliest = row.earliest ?? now;
     return { ok: false, retryAfterMs: RATE_LIMIT_WINDOW_MS - (now - earliest) };
   }
-  arr.push(now);
-  userHits.set(userId, arr);
+  db.prepare('INSERT INTO rate_limit_hits(id,user_id,route,ts_ms) VALUES(?,?,?,?)').run(
+    crypto.randomUUID(), userId, ROUTE_SUGGEST, now
+  );
   return { ok: true };
 }
+
+// 每 10 分钟清理 2 个窗口期以前的旧记录，避免表无限增长
+setInterval(() => {
+  try {
+    getDb()
+      .prepare('DELETE FROM rate_limit_hits WHERE ts_ms < ?')
+      .run(Date.now() - 2 * RATE_LIMIT_WINDOW_MS);
+  } catch { /* ignore */ }
+}, 10 * 60 * 1000).unref();
 
 interface SubprocessResult {
   ok: boolean;
@@ -40,9 +60,28 @@ interface SubprocessResult {
   timedOut: boolean;
 }
 
+// 与 dataflow_edu/serving/llm_client.py LLM_PROVIDERS 对齐
+// web_search_llm 固定走 zgca provider，但 BYOK key 通过 LLM_API_KEY / LLM_ZGCA_API_KEY 传入
+const COMPETENCY_PROVIDER_KEY_MAP: Record<string, string> = {
+  zaiwen:             'LLM_ZAIWEN_API_KEY',
+  zgca:               'LLM_ZGCA_API_KEY',
+  gptagent:           'LLM_GPTAGENT_API_KEY',
+  aiping:             'LLM_AIPING_API_KEY',
+  blt:                'LLM_BLT_API_KEY',
+  openrouter_official:'LLM_OPENROUTER_OFFICIAL_API_KEY',
+  openrouter:         'LLM_OPENROUTER_API_KEY',
+  xiaoai:             'LLM_XIAOAI_API_KEY',
+  qiniu:              'LLM_QINIU_API_KEY',
+  iflytek:            'LLM_IFLYTEK_API_KEY',
+  openai:             'OPENAI_API_KEY',
+  dashscope:          'DASHSCOPE_API_KEY',
+  deepseek:           'DEEPSEEK_API_KEY',
+  volcengine:         'ARK_API_KEY',
+};
+
 function runSuggestProcess(
   projectRoot: string,
-  payload: { subject: string; book: string; needs: string },
+  payload: { subject: string; book: string; needs: string; provider?: string },
   llmKey: string
 ): Promise<SubprocessResult> {
   return new Promise((resolve) => {
@@ -63,18 +102,21 @@ function runSuggestProcess(
       payload.needs,
     ];
 
+    const provider = (payload.provider ?? 'zgca').toLowerCase();
+    const providerEnvKey = COMPETENCY_PROVIDER_KEY_MAP[provider] ?? 'LLM_ZGCA_API_KEY';
+    const spawnEnv: Record<string, string> = {
+      ...process.env as Record<string, string>,
+      PYTHONPATH: pythonPath,
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONUTF8: '1',
+      DATAFLOW_NONINTERACTIVE: '1',
+      LLM_API_KEY: llmKey,
+    };
+    spawnEnv[providerEnvKey] = llmKey;
+
     const child = spawn(pythonBin, args, {
       cwd: projectRoot,
-      env: {
-        ...process.env,
-        PYTHONPATH: pythonPath,
-        PYTHONIOENCODING: 'utf-8',
-        PYTHONUTF8: '1',
-        DATAFLOW_NONINTERACTIVE: '1',
-        LLM_API_KEY: llmKey,
-        LLM_ZGCA_API_KEY: llmKey,
-        OPENAI_API_KEY: llmKey,
-      },
+      env: spawnEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -186,10 +228,12 @@ export function competencyRoutes(projectRoot: string): Router {
       subject?: unknown;
       book?: unknown;
       needs?: unknown;
+      provider?: unknown;
     };
     const subject = String(body.subject ?? '').trim();
     const book = String(body.book ?? '').trim();
     const needs = String(body.needs ?? '').trim();
+    const provider = String(body.provider ?? 'dashscope').toLowerCase().trim();
     if (!subject) {
       res.status(400).json({ error: 'missing_subject' });
       return;
@@ -226,7 +270,7 @@ export function competencyRoutes(projectRoot: string): Router {
       return;
     }
 
-    const result = await runSuggestProcess(projectRoot, { subject, book, needs }, llmKey);
+    const result = await runSuggestProcess(projectRoot, { subject, book, needs, provider }, llmKey);
     if (result.ok) {
       res.json({ ok: true, competencies: result.competencies });
       return;

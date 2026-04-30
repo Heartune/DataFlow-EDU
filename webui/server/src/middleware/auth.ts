@@ -18,8 +18,17 @@ declare global {
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < 8) {
-    throw new Error('JWT_SECRET 未设置或过短，请在 webui/server/.env 中配置一个长随机串');
+  const isProd = process.env.NODE_ENV === 'production';
+  const minLen = isProd ? 32 : 8;
+  if (!secret || secret.length < minLen) {
+    const msg = isProd
+      ? `[fatal] JWT_SECRET 未设置或过短（生产环境需 ≥32 字节），请在 webui/server/.env 中配置强随机串后重启`
+      : 'JWT_SECRET 未设置或过短，请在 webui/server/.env 中配置一个长随机串';
+    if (isProd) {
+      console.error(msg);
+      process.exit(1);
+    }
+    throw new Error(msg);
   }
   return secret;
 }

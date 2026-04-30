@@ -1,14 +1,21 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { dataRoutes } from './routes/data.js';
 import { configRoutes, presetReaderRoutes } from './routes/config.js';
 import { pipelineRoutes } from './routes/pipeline.js';
 import { authRoutes } from './routes/auth.js';
-import { tasksRoutes, reconcileOrphanedRunningTasks } from './routes/tasks.js';
+import { tasksRoutes, reconcileOrphanedRunningTasks, killAllChildren, broadcastShutdownSSE } from './routes/tasks.js';
+import { shareRoutes } from './routes/share.js';
 import { competencyRoutes } from './routes/competency.js';
+import { adminUserRoutes } from './routes/admin.js';
+import { foldersRoutes } from './routes/folders.js';
 import { requireAuth, requireAdmin } from './middleware/auth.js';
 import { getDb, cleanupExpiredExports } from './db.js';
 
@@ -40,11 +47,91 @@ setInterval(() => {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// CORS：dev 允许 localhost:5173，生产走 CORS_ORIGINS 环境变量（逗号分隔）
+const rawOrigins = process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
+const devOrigins =
+  process.env.NODE_ENV !== 'production'
+    ? [
+        'http://localhost:5173',
+        'http://localhost:3001',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:3001',
+      ]
+    : [];
+const allowedOrigins = [...new Set([...rawOrigins, ...devOrigins])];
+
+/** 开发模式下放行本机任意端口（Vite 5173 被占用时会自动换端口等） */
+function isDevLoopbackOrigin(origin: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(origin);
+    if (protocol !== 'http:' && protocol !== 'https:') return false;
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '[::1]' ||
+      hostname === '::1'
+    );
+  } catch {
+    return false;
+  }
+}
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // 允许无 origin 请求（服务端直接调用 / curl 等）
+      if (!origin || allowedOrigins.includes(origin)) {
+        cb(null, true);
+      } else if (process.env.NODE_ENV !== 'production' && isDevLoopbackOrigin(origin)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  })
+);
+
+// HTTP 安全头（使用 helmet 默认配置）
+app.use(helmet());
+
 app.use(express.json({ limit: '10mb' }));
+
+// 全局兜底限流：200 次/min/IP
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', globalLimiter);
+
+// 健康检查：检查 DB 可读 + 磁盘可写
+app.get('/api/healthz', (_, res) => {
+  try {
+    getDb().prepare('SELECT 1 FROM users LIMIT 1').get();
+  } catch (err) {
+    console.error('[healthz] DB check failed:', err);
+    res.status(503).json({ status: 'error', detail: 'db_unreachable' });
+    return;
+  }
+  const tmpFile = path.join(os.tmpdir(), `.healthz-${Date.now()}`);
+  try {
+    fs.writeFileSync(tmpFile, '1');
+    fs.unlinkSync(tmpFile);
+  } catch (err) {
+    console.error('[healthz] disk check failed:', err);
+    res.status(503).json({ status: 'error', detail: 'disk_unwritable' });
+    return;
+  }
+  res.json({ status: 'ok' });
+});
 
 app.use('/api/auth', authRoutes());
 app.use('/api/tasks', requireAuth, tasksRoutes(projectRoot));
+app.use('/api/folders', requireAuth, foldersRoutes());
+// 只读分享：公开接口，无需登录
+app.use('/api/share', shareRoutes(projectRoot));
 
 // 教师端 / 通用：preset 只读接口（WizardView 第 1 步必用）
 app.use('/api', requireAuth, presetReaderRoutes(projectRoot));
@@ -56,6 +143,8 @@ app.use('/api/competency', requireAuth, competencyRoutes(projectRoot));
 app.use('/api/admin', requireAuth, requireAdmin, dataRoutes(projectRoot));
 app.use('/api/admin', requireAuth, requireAdmin, configRoutes(projectRoot));
 app.use('/api/admin', requireAuth, requireAdmin, pipelineRoutes());
+// 用户管理：邀请码 + 待审批用户 + 审计日志
+app.use('/api/admin', requireAuth, requireAdmin, adminUserRoutes());
 
 if (process.env.NODE_ENV !== 'production') {
   app.get('/', (_, res) => {
@@ -88,6 +177,18 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`[edu-webui-server] running at http://localhost:${PORT}`);
 });
+
+// Graceful shutdown：SIGTERM（docker stop / systemd stop）/ SIGINT（Ctrl+C）
+const doShutdown = async (sig: string) => {
+  console.log(`[edu-webui-server] ${sig} received, shutting down...`);
+  server.close();
+  broadcastShutdownSSE();
+  await killAllChildren();
+  try { getDb().close(); } catch { /* ignore */ }
+  process.exit(0);
+};
+process.on('SIGTERM', () => void doShutdown('SIGTERM'));
+process.on('SIGINT',  () => void doShutdown('SIGINT'));
