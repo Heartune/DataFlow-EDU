@@ -96,13 +96,13 @@ async function submit() {
   }
   loading.value = true;
   error.value = '';
-  pendingApproval.value = false;
-  try {
-    const result = await auth.register(email.value.trim(), password.value, inviteCode.value.trim());
-    if (result?.status === 'pending_approval') {
-      pendingApproval.value = true;
-    } else {
-      router.replace('/teacher/tasks');
+    pendingApproval.value = false;
+    try {
+      const result = await auth.register(email.value.trim(), password.value, inviteCode.value.trim());
+      if ('status' in result && result.status === 'pending_approval') {
+        pendingApproval.value = true;
+      } else {
+        router.replace('/teacher/tasks');
     }
   } catch (err: any) {
     const code = err?.response?.data?.error;

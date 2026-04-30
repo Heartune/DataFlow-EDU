@@ -111,11 +111,6 @@ const LANG_OPTIONS = [
   { value: 'fr' as const, label: 'Français（已翻译题需 stage ≥ 3.7）' },
 ];
 
-const VARIANT_OPTIONS = [
-  { value: 'with_answer' as const, label: '教师卷（题干 + 答案 + 解析）' },
-  { value: 'blank' as const, label: '学生卷（题干 + 选项；答案集中在末尾）' },
-];
-
 const stage = ref('3_8_mcq_verified');
 const lang = ref<Lang>('zh');
 const variant = ref<Variant>('with_answer');
@@ -352,15 +347,6 @@ function labelOf(format: Format): string {
   if (format === 'json') return 'JSON 数据包';
   if (format === 'word') return 'Word 试卷';
   return 'PDF 试卷';
-}
-
-function statusText(format: Format): string {
-  const j = jobs.value[format];
-  if (!j) return '';
-  if (j.status === 'pending' || j.status === 'running') return '生成中…';
-  if (j.status === 'succeeded') return '已生成（点击下方再次下载）';
-  if (j.status === 'failed') return `失败：${j.errorMessage || '未知错误'}`;
-  return '';
 }
 
 function disabledOf(format: Format): boolean {

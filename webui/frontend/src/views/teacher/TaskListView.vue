@@ -407,16 +407,6 @@ async function onFolderDrop(e: DragEvent, folderId: string) {
   }
 }
 
-// 从任务的文件夹标签上直接移除
-async function removeFromFolder(taskId: string, folderId: string) {
-  try {
-    await api.delete(`/folders/${folderId}/tasks/${taskId}`);
-    await Promise.all([loadFolders(), loadTasks()]);
-  } catch {
-    // 静默失败
-  }
-}
-
 // ── 文件夹拖动排序 ────────────────────────────────────────────────────────────
 
 function onFolderHandleDragStart(e: DragEvent, folderId: string) {
