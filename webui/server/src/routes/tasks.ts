@@ -59,6 +59,66 @@ const stoppingTasks = new Set<string>();
 // ── 全局并发控制 ──────────────────────────────────────────────────────────────
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_TASKS ?? '4', 10);
 const TASK_TIMEOUT_MS = parseInt(process.env.TASK_TIMEOUT_HOURS ?? '4', 10) * 60 * 60 * 1000;
+// original default provider/model/base URL were ZGCA / saved config / provider fallback.
+const DEFAULT_LLM_PROVIDER = (process.env.DATAFLOW_LLM_PROVIDER || 'blt').toLowerCase();
+const DEFAULT_LLM_MODEL = process.env.DATAFLOW_LLM_MODEL || 'gemini-3-flash-preview-nothinking';
+const DEFAULT_LLM_BASE_URL = process.env.DATAFLOW_LLM_BASE_URL || 'https://api.bltcy.ai/v1';
+
+const ETA_MS_PER_10_PAGES_PER_STEP = 2 * 60 * 1000;
+const ETA_MANDATORY_STEP_COUNT = 3;
+const ETA_OPTIONAL_STAGES = [
+  '2.2 知识均衡检查与修正',
+  '3.1 题意模糊检查',
+  '3.2 题意模糊修正',
+  '3.3 考察领域检查',
+  '3.4 考察领域修正',
+  '3.5 去除重复题目',
+  '3.6 题库增强',
+  '3.7 多语言翻译',
+  '3.8 选择题格式检查',
+];
+const ETA_OPTIONAL_STAGE_SET = new Set(ETA_OPTIONAL_STAGES);
+
+function estimateStepCountForEta(taskDir: string): number {
+  const progressPath = path.join(taskDir, 'progress.json');
+  try {
+    if (fs.existsSync(progressPath)) {
+      const progress = JSON.parse(fs.readFileSync(progressPath, 'utf-8')) as {
+        stages?: Array<{ status?: unknown }>;
+      };
+      if (Array.isArray(progress.stages) && progress.stages.length > 0) {
+        const active = progress.stages.filter((s) => s.status !== 'skipped').length;
+        if (active > 0) return active;
+      }
+    }
+  } catch {
+    /* ignore and fall through */
+  }
+
+  const configPath = path.join(taskDir, 'config.yaml');
+  try {
+    if (fs.existsSync(configPath)) {
+      const parsed = yaml.load(fs.readFileSync(configPath, 'utf-8')) as { enabled_stages?: unknown } | null;
+      if (parsed && Array.isArray(parsed.enabled_stages)) {
+        const enabledOptional = new Set(
+          parsed.enabled_stages.filter((name): name is string => typeof name === 'string' && ETA_OPTIONAL_STAGE_SET.has(name))
+        );
+        return ETA_MANDATORY_STEP_COUNT + enabledOptional.size;
+      }
+    }
+  } catch {
+    /* ignore and fall through */
+  }
+
+  return ETA_MANDATORY_STEP_COUNT + ETA_OPTIONAL_STAGES.length;
+}
+
+function estimateDefaultTotalMsForEta(taskDir: string, currentPages: number | null): number {
+  const pageCount = currentPages && currentPages > 0 ? currentPages : 10;
+  const pageChunks = Math.max(1, Math.ceil(pageCount / 10));
+  const stepCount = Math.max(1, estimateStepCountForEta(taskDir));
+  return pageChunks * stepCount * ETA_MS_PER_10_PAGES_PER_STEP;
+}
 
 // 等待队列（进程内；重启后 queued 状态任务回退为 created）
 interface QueuedTask {
@@ -317,8 +377,9 @@ function doSpawn(
   // 解析 provider
   let meta: Record<string, unknown> = {};
   try { meta = JSON.parse(task.meta_json || '{}'); } catch { /* ignore */ }
-  const provider = String(meta.provider ?? 'zaiwen').toLowerCase();
-  const providerEnvKey = PROVIDER_KEY_MAP[provider] ?? 'LLM_ZAIWEN_API_KEY';
+  // original: const provider = String(meta.provider ?? 'zaiwen').toLowerCase();
+  const provider = String(meta.provider ?? DEFAULT_LLM_PROVIDER).toLowerCase();
+  const providerEnvKey = PROVIDER_KEY_MAP[provider] ?? PROVIDER_KEY_MAP[DEFAULT_LLM_PROVIDER] ?? 'LLM_BLT_API_KEY';
 
   const pythonBin = process.env.PYTHON_BIN || 'python';
   const dataflowLocal = path.join(projectRoot, 'DataFlow');
@@ -343,6 +404,9 @@ function doSpawn(
     DATAFLOW_TASK_ID: task.id,
     DATAFLOW_TASK_DIR: taskDir,
     DATAFLOW_TASK_INPUT_PDF: pdfPath,
+    DATAFLOW_LLM_PROVIDER: provider,
+    DATAFLOW_LLM_MODEL: DEFAULT_LLM_MODEL,
+    DATAFLOW_LLM_BASE_URL: provider === DEFAULT_LLM_PROVIDER ? DEFAULT_LLM_BASE_URL : (process.env.DATAFLOW_LLM_BASE_URL || ''),
     LLM_API_KEY: llmKey,
     PYTHONIOENCODING: 'utf-8',
     PYTHONUTF8: '1',
@@ -678,9 +742,10 @@ export function tasksRoutes(projectRoot: string): Router {
     }
 
     const name = String((req.body && req.body.name) || req.file.originalname || '未命名教材').slice(0, 200);
-    const VALID_PROVIDERS = new Set(['zgca', 'dashscope', 'openai', 'deepseek', 'volcengine', 'volcark']);
-    const rawProvider = String((req.body && req.body.provider) || 'zgca').toLowerCase().trim();
-    const provider = VALID_PROVIDERS.has(rawProvider) ? rawProvider : 'zgca';
+    const VALID_PROVIDERS = new Set(['blt', 'zgca', 'dashscope', 'openai', 'deepseek', 'volcengine', 'volcark']);
+    // original fallback: 'zgca'
+    const rawProvider = String((req.body && req.body.provider) || DEFAULT_LLM_PROVIDER).toLowerCase().trim();
+    const provider = VALID_PROVIDERS.has(rawProvider) ? rawProvider : DEFAULT_LLM_PROVIDER;
 
     const db = getDb();
     const day = todayKey();
@@ -806,14 +871,16 @@ export function tasksRoutes(projectRoot: string): Router {
     if (existing) {
       return { error: 'user_has_running_task', status: 409, extra: { running_task_id: existing.taskId } };
     }
-    // 平台密钥模式：provider=zgca 时直接从服务端 env 取 key，无需前端传
-    let llmKey = String(req.headers['x-llm-key'] || '').trim();
+    // 平台密钥模式优先使用服务端 env。只有平台 key 缺失时才接受浏览器传入的 BYOK，
+    // 避免用户浏览器 localStorage 中残留的旧 X-LLM-Key 覆盖生产平台 key。
+    const headerLlmKey = String(req.headers['x-llm-key'] || '').trim();
     const taskMeta = (() => {
       try { return JSON.parse(task.meta_json || '{}') as Record<string, unknown>; } catch { return {}; }
     })();
-    if (String(taskMeta.provider ?? '').toLowerCase() === 'zgca') {
-      llmKey = (process.env.LLM_ZGCA_API_KEY || '').trim();
-    }
+    const provider = String(taskMeta.provider ?? DEFAULT_LLM_PROVIDER).toLowerCase();
+    const providerEnvKey = PROVIDER_KEY_MAP[provider] ?? PROVIDER_KEY_MAP[DEFAULT_LLM_PROVIDER];
+    const envLlmKey = providerEnvKey ? (process.env[providerEnvKey] || '').trim() : '';
+    const llmKey = envLlmKey || headerLlmKey;
     if (!llmKey) {
       return { error: 'missing_llm_key', status: 400 };
     }
@@ -1069,7 +1136,9 @@ export function tasksRoutes(projectRoot: string): Router {
       .get(req.user.id, day) as { used: number };
     const used = Number(usedRow.used ?? 0);
     // 平台密钥脱敏：只返回前 8 位 + "..."
-    const rawKey = (process.env.LLM_ZGCA_API_KEY || '').trim();
+    // original: const rawKey = (process.env.LLM_ZGCA_API_KEY || '').trim();
+    const quotaProviderEnvKey = PROVIDER_KEY_MAP[DEFAULT_LLM_PROVIDER] ?? 'LLM_BLT_API_KEY';
+    const rawKey = (process.env[quotaProviderEnvKey] || '').trim();
     const platformKeyHint = rawKey.length > 8 ? rawKey.slice(0, 8) + '...' : rawKey ? '(已配置)' : '(未配置)';
     res.json({ used, limit, remaining: Math.max(0, limit - used), platform_key_hint: platformKeyHint });
   });
@@ -1268,7 +1337,7 @@ export function tasksRoutes(projectRoot: string): Router {
   });
 
   // ── GET /:id/eta ──────────────────────────────────────────────────────────────
-  // 估算当前任务剩余完成时间（hybrid：有历史走历史均值，否则用兜底固定值）
+  // 估算当前任务剩余完成时间（hybrid：有历史走历史均值，否则按 PDF 页数与 step 数估算）
   router.get('/:id/eta', (req: Request, res: Response) => {
     if (!req.user) {
       res.status(401).json({ error: 'unauthorized' });
@@ -1283,8 +1352,6 @@ export function tasksRoutes(projectRoot: string): Router {
     }
 
     const now = Date.now();
-    const DEFAULT_TOTAL_MS = 4 * 60 * 60 * 1000; // 4h 兜底
-
     // pdf_pages 优先从 task_meta.json（task_runner 在启动时写入），其次从 meta_json
     const taskDir = userTaskRoot(projectRoot, task.user_id, task.id);
     const taskMetaPath = path.join(taskDir, 'task_meta.json');
@@ -1313,8 +1380,8 @@ export function tasksRoutes(projectRoot: string): Router {
       .prepare(`SELECT created_at, updated_at, meta_json FROM tasks WHERE status = 'succeeded' AND id != ?`)
       .all(task.id) as Array<{ created_at: number; updated_at: number; meta_json: string }>;
 
-    let totalMs = DEFAULT_TOTAL_MS;
-    let method: 'history' | 'default' = 'default';
+    let totalMs = estimateDefaultTotalMsForEta(taskDir, currentPages);
+    let method: 'history' | 'pdf_step_default' = 'pdf_step_default';
 
     if (history.length >= 2) {
       const durations = history.map((h) => h.updated_at - h.created_at).filter((d) => d > 0);
@@ -1352,7 +1419,7 @@ export function tasksRoutes(projectRoot: string): Router {
       remaining_seconds: Math.round(remainingMs / 1000),
       elapsed_seconds: Math.round(elapsedMs / 1000),
       method,
-      show_eta: method === 'history',
+      show_eta: true,
     });
   });
 

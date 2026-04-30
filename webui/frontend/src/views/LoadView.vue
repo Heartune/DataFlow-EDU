@@ -55,7 +55,7 @@ function onKeydown(e: KeyboardEvent) {
           </svg>
         </div>
         <h1 class="text-2xl font-bold text-slate-900 tracking-tight">
-          DataFlow-EDU Pipeline
+          DataFlow-EDU | AI赋能·解放教师生产力
         </h1>
         <p class="mt-2 text-sm text-slate-500">
           从固定路径加载知识分类、题目生成、题目均衡三阶段数据

@@ -839,7 +839,7 @@ const isMcq = computed(() => {
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">题干</label>
               <textarea
                 v-model="editState.item.question"
-                rows="4"
+                rows="12"
                 class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm leading-relaxed focus:outline-none focus:border-slate-400 resize-y"
                 placeholder="请输入题干内容…"
               />
@@ -888,10 +888,10 @@ const isMcq = computed(() => {
             <!-- 答案 -->
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">答案</label>
-              <input
+              <textarea
                 v-model="editState.item.answer"
-                type="text"
-                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-slate-400"
+                rows="8"
+                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm leading-relaxed focus:outline-none focus:border-slate-400 resize-y"
                 placeholder="请输入答案…"
               />
             </div>
@@ -901,7 +901,7 @@ const isMcq = computed(() => {
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">解析</label>
               <textarea
                 v-model="editState.item.explanation"
-                rows="3"
+                rows="8"
                 class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm leading-relaxed focus:outline-none focus:border-slate-400 resize-y"
                 placeholder="请输入解析（可选）…"
               />

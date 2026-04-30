@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">DataFlow-EDU | AI赋能·解放教师生产力</title>
+  <desc id="desc">A branded preview image for DataFlow-EDU with data-flow nodes and an education icon.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset=".48" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="230" y1="104" x2="990" y2="526" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".96"/>
+      <stop offset="1" stop-color="#e0f2fe" stop-opacity=".92"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="34" flood-color="#020617" flood-opacity=".2"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <path d="M80 474c164-70 284-181 360-333 28-56 105-57 133-2 88 174 255 277 547 295" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity=".18"/>
+  <path d="M151 143h186M881 166h168M133 505h242M830 496h246" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-opacity=".16"/>
+  <circle cx="213" cy="214" r="11" fill="#fde68a" opacity=".9"/>
+  <circle cx="417" cy="105" r="13" fill="#86efac" opacity=".9"/>
+  <circle cx="986" cy="275" r="12" fill="#bfdbfe" opacity=".9"/>
+  <circle cx="798" cy="536" r="10" fill="#f0abfc" opacity=".85"/>
+  <g filter="url(#shadow)">
+    <rect x="180" y="110" width="840" height="410" rx="28" fill="url(#panel)"/>
+  </g>
+  <g transform="translate(250 200)">
+    <rect width="150" height="150" rx="34" fill="#0f172a"/>
+    <path d="M35 54c0-7.2 5.8-13 13-13h19c6.4 0 11.2 2.6 14.5 7.5C84.8 43.6 89.6 41 96 41h8c7.2 0 13 5.8 13 13v55c0 2.2-1.8 4-4 4H94c-6.5 0-10.5 2.3-12.5 7-2-4.7-6-7-12.5-7H39c-2.2 0-4-1.8-4-4V54Z" fill="#f8fafc"/>
+    <path d="M81.5 50v66" stroke="#2563eb" stroke-width="5" stroke-linecap="round"/>
+    <path d="M49 62h16M49 75h20M49 88h15M96 62h8M96 75h12M96 88h7" stroke="#0f172a" stroke-width="5" stroke-linecap="round" opacity=".5"/>
+    <path d="M49 102c14-4 24-11 31-22 6-10 15-16 28-18" fill="none" stroke="#14b8a6" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="49" cy="102" r="7" fill="#f59e0b" stroke="#fff" stroke-width="3"/>
+    <circle cx="80" cy="80" r="7" fill="#22c55e" stroke="#fff" stroke-width="3"/>
+    <circle cx="108" cy="62" r="7" fill="#60a5fa" stroke="#fff" stroke-width="3"/>
+  </g>
+  <text x="442" y="264" fill="#0f172a" font-family="Inter, Arial, 'Microsoft YaHei', sans-serif" font-size="66" font-weight="800">DataFlow-EDU</text>
+  <text x="446" y="328" fill="#0f766e" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="700">AI-Powered Teacher Productivity</text>
+  <text x="446" y="384" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="500">Generate, review and export education data</text>
+  <path d="M448 430h120M590 430h76M688 430h148" stroke="#2563eb" stroke-width="10" stroke-linecap="round" opacity=".25"/>
+</svg>

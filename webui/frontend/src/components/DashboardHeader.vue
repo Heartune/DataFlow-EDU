@@ -32,7 +32,7 @@ function showLoadSection() {
       <div class="py-3 flex items-center justify-between border-b border-slate-100">
         <div class="min-w-0">
           <h1 class="text-base font-bold text-slate-900 truncate">
-            DataFlow-EDU Pipeline
+            DataFlow-EDU | AI赋能·解放教师生产力
           </h1>
           <p class="text-xs text-slate-500 mt-0.5 truncate">
             配置 · 阶段1 · 阶段2 · 阶段3 {{ store.bookName ? `· ${store.bookName}` : '' }}

@@ -132,7 +132,8 @@ async function submit(mode: 'wizard' | 'quick') {
     const form = new FormData();
     form.append('pdf', file.value);
     form.append('name', taskName.value.trim());
-    form.append('provider', 'zgca');
+    // original: form.append('provider', 'zgca');
+    form.append('provider', 'blt');
     const { data: created } = await api.post('/tasks/upload-pdf', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
@@ -286,7 +287,8 @@ function closeQuickModal() {
           disabled
           class="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-500 text-sm cursor-not-allowed"
         >
-          <option value="zgca" selected>ZGCA（平台）</option>
+          <!-- original: <option value="zgca" selected>ZGCA（平台）</option> -->
+          <option value="blt" selected>BLT（平台）</option>
         </select>
       </div>
 

@@ -61,7 +61,9 @@ interface SubprocessResult {
 }
 
 // 与 dataflow_edu/serving/llm_client.py LLM_PROVIDERS 对齐
-// web_search_llm 固定走 zgca provider，但 BYOK key 通过 LLM_API_KEY / LLM_ZGCA_API_KEY 传入
+// web_search_llm 默认走 BLT provider，但 BYOK key 通过 LLM_API_KEY / provider env 传入
+// original default provider: zgca
+const DEFAULT_COMPETENCY_PROVIDER = (process.env.DATAFLOW_LLM_PROVIDER || 'blt').toLowerCase();
 const COMPETENCY_PROVIDER_KEY_MAP: Record<string, string> = {
   zaiwen:             'LLM_ZAIWEN_API_KEY',
   zgca:               'LLM_ZGCA_API_KEY',
@@ -102,8 +104,8 @@ function runSuggestProcess(
       payload.needs,
     ];
 
-    const provider = (payload.provider ?? 'zgca').toLowerCase();
-    const providerEnvKey = COMPETENCY_PROVIDER_KEY_MAP[provider] ?? 'LLM_ZGCA_API_KEY';
+    const provider = (payload.provider ?? DEFAULT_COMPETENCY_PROVIDER).toLowerCase();
+    const providerEnvKey = COMPETENCY_PROVIDER_KEY_MAP[provider] ?? COMPETENCY_PROVIDER_KEY_MAP[DEFAULT_COMPETENCY_PROVIDER] ?? 'LLM_BLT_API_KEY';
     const spawnEnv: Record<string, string> = {
       ...process.env as Record<string, string>,
       PYTHONPATH: pythonPath,
@@ -250,9 +252,15 @@ export function competencyRoutes(projectRoot: string): Router {
       return;
     }
 
-    const llmKey = String(req.headers['x-llm-key'] || '').trim();
+    const providerEnvKey =
+      COMPETENCY_PROVIDER_KEY_MAP[provider] ??
+      COMPETENCY_PROVIDER_KEY_MAP[DEFAULT_COMPETENCY_PROVIDER] ??
+      'LLM_BLT_API_KEY';
+    const envLlmKey = (process.env[providerEnvKey] || '').trim();
+    const headerLlmKey = String(req.headers['x-llm-key'] || '').trim();
+    const llmKey = envLlmKey || headerLlmKey;
     if (!llmKey) {
-      res.status(400).json({ error: 'missing_llm_key', message: '请求缺少 X-LLM-Key 请求头' });
+      res.status(400).json({ error: 'missing_llm_key', message: '服务端未配置 LLM API Key，且请求缺少 X-LLM-Key 请求头' });
       return;
     }
 

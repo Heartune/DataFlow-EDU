@@ -967,7 +967,7 @@ function fmtTime(s?: string | null) {
 interface EtaData {
   remaining_seconds: number;
   elapsed_seconds: number;
-  method: 'history' | 'default';
+  method: 'history' | 'pdf_step_default';
   show_eta: boolean;
 }
 
@@ -1080,14 +1080,16 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
         class="mb-3 bg-sky-50 border border-sky-200 text-sky-800 rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm"
       >
         <span class="text-base">⏱</span>
-        <span v-if="!eta.show_eta">
-          已运行 <span class="font-semibold">{{ fmtElapsed(eta.elapsed_seconds) }}</span>
-          <span class="text-sky-600 ml-1">（估算中，暂无历史参考）</span>
-        </span>
-        <span v-else>
+        <span v-if="eta.show_eta">
           预计还需
           <span class="font-semibold">{{ fmtEta(eta.remaining_seconds) }}</span>
-          <span class="text-sky-600 ml-1">（已运行 {{ fmtElapsed(eta.elapsed_seconds) }}，基于历史数据）</span>
+          <span class="text-sky-600 ml-1">
+            （已运行 {{ fmtElapsed(eta.elapsed_seconds) }}，{{ eta.method === 'history' ? '基于历史数据' : '按页数和步骤估算' }}）
+          </span>
+        </span>
+        <span v-else>
+          已运行 <span class="font-semibold">{{ fmtElapsed(eta.elapsed_seconds) }}</span>
+          <span class="text-sky-600 ml-1">（估算中）</span>
         </span>
       </div>
 
