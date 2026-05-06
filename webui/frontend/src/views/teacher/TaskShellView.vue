@@ -106,7 +106,7 @@ watch(() => props.id, loadTask);
 </script>
 
 <template>
-  <div>
+  <div class="min-w-0">
     <router-link to="/teacher/tasks" class="text-sm text-slate-500 hover:text-slate-900">
       ← 返回任务列表
     </router-link>
@@ -115,17 +115,17 @@ watch(() => props.id, loadTask);
       {{ error }}
     </div>
 
-    <div v-if="task" class="mt-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
-      <div class="min-w-0 flex-1">
+    <div v-if="task" class="mt-4 mb-4 flex items-start sm:items-center justify-between gap-3 sm:gap-4 flex-wrap">
+      <div class="min-w-0 flex-1 basis-full sm:basis-0">
         <template v-if="titleEditing">
           <div class="flex flex-col gap-2 max-w-xl">
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
               <input
                 ref="titleInput"
                 v-model="titleDraft"
                 type="text"
                 maxlength="200"
-                class="flex-1 min-w-[12rem] px-3 py-2 border border-slate-300 rounded-lg text-xl font-bold text-slate-900"
+                class="w-full sm:flex-1 sm:min-w-[12rem] px-3 py-2 border border-slate-300 rounded-lg text-lg sm:text-xl font-bold text-slate-900"
                 :disabled="titleSaving"
                 @keydown.enter.prevent="saveTitleEdit"
                 @keydown.esc.prevent="cancelTitleEdit"
@@ -151,8 +151,8 @@ watch(() => props.id, loadTask);
           </div>
         </template>
         <template v-else>
-          <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="text-xl font-bold text-slate-900 truncate">{{ task.name }}</h1>
+          <div class="flex items-center gap-2 flex-wrap min-w-0">
+            <h1 class="text-lg sm:text-xl font-bold text-slate-900 truncate min-w-0">{{ task.name }}</h1>
             <button
               type="button"
               class="shrink-0 px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
@@ -162,7 +162,7 @@ watch(() => props.id, loadTask);
             </button>
           </div>
         </template>
-        <p class="text-xs text-slate-500 mt-1 font-mono break-all">{{ task.id }}</p>
+        <p class="text-xs text-slate-500 mt-1 font-sans break-all">任务ID：{{ task.id }}</p>
       </div>
       <span
         v-if="task.status"
@@ -172,8 +172,8 @@ watch(() => props.id, loadTask);
       </span>
     </div>
 
-    <nav v-if="task" class="border-b border-slate-200 mb-4">
-      <ul class="flex gap-1">
+    <nav v-if="task" class="border-b border-slate-200 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <ul class="flex gap-1 min-w-max">
         <li v-for="t in tabs" :key="t.name">
           <router-link
             :to="t.to"

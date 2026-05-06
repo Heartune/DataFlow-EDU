@@ -54,7 +54,8 @@ interface ActiveJob {
 const EXPORTABLE_STAGE_MAP: Record<string, { id: string; label: string; hint: string }> = {
   '3.8 选择题格式检查':   { id: '3_8_mcq_verified',                          label: '3.8 选择题格式检查',   hint: '推荐：选择题格式已规范，可直接导出' },
   '3.7 多语言翻译':      { id: '3_7_translated',                            label: '3.7 多语言翻译',     hint: '每道题附有英文/法文译文' },
-  '3.6 题库增强':        { id: '3_6_synthesized',                            label: '3.6 题库增强',       hint: '已为每道题生成详细解析（explanation）' },
+  '3.6 解析生成':        { id: '3_6_synthesized',                            label: '3.6 解析生成',       hint: '已为每道题生成详细解析（explanation）' },
+  '3.6 题库增强':        { id: '3_6_synthesized',                            label: '3.6 解析生成',       hint: '已为每道题生成详细解析（explanation）' },
   '3.5 去除重复题目':    { id: '3_5_deduplicated',                           label: '3.5 去除重复题目',   hint: '已删除内容相似的重复题目' },
   '3.4 考察领域修正':    { id: '3_4_domain_refined',                         label: '3.4 考察领域修正',   hint: '题目考察的知识领域已经过校正' },
   '3.2 题意模糊修正':    { id: '3_2_ambiguity_refined',                      label: '3.2 题意模糊修正',   hint: '已删除或改写措辞模糊的题目' },
@@ -477,7 +478,7 @@ async function downloadLegacyZip() {
 </script>
 
 <template>
-  <div>
+  <div class="min-w-0">
     <p v-if="error" class="text-sm text-rose-600 mb-3">{{ error }}</p>
     <p v-if="info" class="text-sm text-emerald-600 mb-3">{{ info }}</p>
 
@@ -485,7 +486,7 @@ async function downloadLegacyZip() {
     <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden mb-4">
 
       <!-- 版本选择 -->
-      <div class="px-6 py-4 border-b border-slate-100">
+      <div class="px-4 sm:px-6 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-800 mb-4">导出版本</h3>
         <div v-if="availableStages.length === 0" class="text-sm text-slate-400">（暂无可导出阶段）</div>
         <div v-else class="flex flex-col gap-3">
@@ -521,7 +522,7 @@ async function downloadLegacyZip() {
             <!-- 内容区 -->
             <input type="radio" :value="o.id" v-model="stage" class="sr-only" :disabled="o.status !== 'succeeded'" />
             <div
-              class="flex-1 min-w-0 rounded-xl px-4 py-2.5 transition-all border"
+              class="flex-1 min-w-0 rounded-xl px-3 sm:px-4 py-2.5 transition-all border"
               :class="[
                 effectiveStage === o.id
                   ? 'bg-emerald-50 border-emerald-500 shadow-sm'
@@ -557,9 +558,9 @@ async function downloadLegacyZip() {
       </div>
 
       <!-- 格式选择 -->
-      <div class="px-6 py-4 border-t border-slate-100">
+      <div class="px-4 sm:px-6 py-4 border-t border-slate-100">
         <p class="text-xs font-semibold text-slate-500 mb-2">文件格式</p>
-        <div class="grid grid-cols-3 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <label
             v-for="opt in [
               { value: 'word', label: 'Word（推荐）', icon: 'fa-file-word' },
@@ -578,7 +579,7 @@ async function downloadLegacyZip() {
       </div>
 
       <!-- 试卷类型 + 语言（同一行，窄屏自动换行） -->
-      <div class="px-6 py-4 border-t border-slate-100">
+      <div class="px-4 sm:px-6 py-4 border-t border-slate-100">
         <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
           <template v-if="activeFormat !== 'json'">
             <span class="text-xs font-semibold text-slate-500 shrink-0">试卷类型</span>
@@ -624,7 +625,7 @@ async function downloadLegacyZip() {
       </div>
 
       <!-- 底部操作栏 -->
-      <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
+      <div class="px-4 sm:px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <!-- 状态反馈 -->
         <div class="text-xs min-w-0">
           <span v-if="jobs[activeFormat as Format]?.status === 'running' || jobs[activeFormat as Format]?.status === 'pending'" class="text-amber-600 flex items-center gap-1.5">
@@ -634,16 +635,16 @@ async function downloadLegacyZip() {
           <span v-else-if="jobs[activeFormat as Format]?.status === 'failed'" class="text-rose-600 truncate">{{ jobs[activeFormat as Format]?.errorMessage || '生成失败' }}</span>
           <span v-else class="text-slate-400">选好配置后点击生成</span>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-2 shrink-0 w-full sm:w-auto">
           <button
             v-if="jobs[activeFormat as Format]?.status === 'succeeded'"
-            class="px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+            class="flex-1 sm:flex-initial px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
             @click="downloadAgain(activeFormat as Format)"
           >
             再次下载
           </button>
           <button
-            class="px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+            class="flex-1 sm:flex-initial px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             :class="jobs[activeFormat as Format]?.status === 'succeeded' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-700'"
             :disabled="disabledOf(activeFormat as Format)"
             @click="startExport(activeFormat as Format)"
@@ -676,13 +677,13 @@ async function downloadLegacyZip() {
 
     <!-- 只读分享链接 -->
     <div class="mt-6 bg-white border border-slate-200 rounded-2xl p-5">
-      <div class="flex items-center justify-between gap-3">
-        <div>
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="min-w-0">
           <h3 class="text-sm font-semibold text-slate-900">只读分享链接</h3>
           <p class="text-xs text-slate-500 mt-0.5">生成链接后，同事无需登录即可浏览题库。</p>
         </div>
         <button
-          class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900"
+          class="w-full sm:w-auto px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900"
           @click="shareOpen = !shareOpen"
         >
           {{ shareOpen ? '收起' : '生成分享链接' }}
@@ -690,7 +691,7 @@ async function downloadLegacyZip() {
       </div>
 
       <div v-if="shareOpen" class="mt-4 space-y-3">
-        <div class="flex items-center gap-3">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
           <label class="text-sm text-slate-600 whitespace-nowrap">链接有效期</label>
           <select
             v-model="shareExpires"
@@ -710,7 +711,7 @@ async function downloadLegacyZip() {
         </div>
 
         <div v-if="shareResult" class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-          <div class="flex items-center gap-2">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2">
             <input
               type="text"
               readonly

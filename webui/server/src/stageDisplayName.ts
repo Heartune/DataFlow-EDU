@@ -13,7 +13,7 @@ const CANONICAL_STAGE_NAMES = new Set([
   '3.3 考察领域检查',
   '3.4 考察领域修正',
   '3.5 去除重复题目',
-  '3.6 题库增强',
+  '3.6 解析生成',
   '3.7 多语言翻译',
   '3.8 选择题格式检查',
 ]);
@@ -29,6 +29,9 @@ const ALIASES: Record<string, string> = (() => {
     ['2.2 Balancing', '2.2 知识均衡检查与修正'],
     ['2.2 Knowledge Balancing', '2.2 知识均衡检查与修正'],
     ['2.2 知识均衡检查', '2.2 知识均衡检查与修正'],
+    ['3.6 Synthesis', '3.6 解析生成'],
+    ['3.6 Synthesis Operator', '3.6 解析生成'],
+    ['3.6 题库增强', '3.6 解析生成'],
     ['3.8 MCQ Verify', '3.8 选择题格式检查'],
     ['阶段2-题目生成', '2.1 题目生成'],
   ];
@@ -54,6 +57,7 @@ export function normalizeStageDisplayName(raw: string | null | undefined): strin
     if (/^1\.2\b/.test(t) && /(mineru|\bocr\b)/i.test(t)) return '1.2 文字识别';
     if (/^2\.1\b/.test(t) && /generation/i.test(t)) return '2.1 题目生成';
     if (/^2\.2\b/.test(t) && /balanc/i.test(t)) return '2.2 知识均衡检查与修正';
+    if (/^3\.6\b/.test(t) && /synthesis/i.test(t)) return '3.6 解析生成';
     if (/^3\.8\b/.test(t) && /mcq/i.test(t)) return '3.8 选择题格式检查';
   }
   return t;

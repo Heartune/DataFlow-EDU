@@ -492,10 +492,10 @@ const activeViewLabel = computed(() => {
 </script>
 
 <template>
-  <div class="flex gap-6 h-full" @click="closeMenu">
+  <div class="flex flex-col lg:flex-row gap-4 lg:gap-6 h-full min-w-0" @click="closeMenu">
 
     <!-- ── 左侧文件夹侧边栏 ──────────────────────────────────────────────── -->
-    <aside class="w-48 flex-shrink-0 flex flex-col">
+    <aside class="w-full lg:w-48 flex-shrink-0 flex flex-col">
       <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-1">文件夹</div>
 
       <!-- 全部任务 -->
@@ -525,7 +525,7 @@ const activeViewLabel = computed(() => {
       <div class="border-t border-slate-100 mb-1"></div>
 
       <!-- 文件夹树（扁平化渲染） -->
-      <div class="flex-1 overflow-y-auto min-h-0 px-1">
+      <div class="flex-1 overflow-y-auto min-h-0 max-h-64 lg:max-h-none px-1">
         <div v-if="loadingFolders" class="text-xs text-slate-400 px-3 py-2">加载中...</div>
 
         <template v-for="folder in flatFolders" :key="folder.id">
@@ -678,23 +678,23 @@ const activeViewLabel = computed(() => {
     <div class="flex-1 min-w-0 flex flex-col">
 
       <!-- 头部 -->
-      <div class="flex items-center justify-between mb-6">
-        <div>
-          <h1 class="text-2xl font-bold text-slate-900">{{ activeViewLabel }}</h1>
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-5 sm:mb-6 gap-3">
+        <div class="min-w-0">
+          <h1 class="text-xl sm:text-2xl font-bold text-slate-900 truncate">{{ activeViewLabel }}</h1>
           <p class="text-sm text-slate-500 mt-1">
             {{ activeFolderId === 'all' ? '上传一份教学材料，自动生成高质量习题与解析' : '将任务行拖入左侧文件夹可完成归类。' }}
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 w-full sm:w-auto">
           <button
-            class="px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-600 hover:border-slate-900"
+            class="flex-1 sm:flex-initial px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-600 hover:border-slate-900"
             @click="load"
           >
             刷新
           </button>
           <router-link
             to="/teacher/tasks/new"
-            class="px-3 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800"
+            class="flex-1 sm:flex-initial px-3 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-center"
           >
             + 新建任务
           </router-link>
@@ -742,8 +742,8 @@ const activeViewLabel = computed(() => {
         </router-link>
       </div>
 
-      <div v-else class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <table class="w-full text-sm">
+      <div v-else class="bg-white rounded-2xl border border-slate-200 overflow-hidden overflow-x-auto">
+        <table class="w-full min-w-[56rem] text-sm">
           <thead class="bg-slate-50 text-slate-500">
             <tr>
               <th class="px-4 py-3 w-8">
@@ -817,9 +817,7 @@ const activeViewLabel = computed(() => {
                 <router-link
                   :to="`/teacher/tasks/${t.id}`"
                   class="text-slate-700 hover:text-slate-900 underline"
-                >
-                  查看
-                </router-link>
+                >查看</router-link>
                 <button
                   class="text-rose-500 hover:text-rose-700 underline ml-3 disabled:opacity-50"
                   :disabled="!!actionBusy[t.id] || singleDeleting"

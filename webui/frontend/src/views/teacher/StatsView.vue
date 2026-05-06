@@ -41,7 +41,8 @@ interface TaskStats {
 const EXPORTABLE_STAGE_MAP: Record<string, { id: string; label: string }> = {
   '3.8 选择题格式检查':   { id: '3_8_mcq_verified',                      label: '3.8 选择题格式检查' },
   '3.7 多语言翻译':      { id: '3_7_translated',                        label: '3.7 多语言翻译' },
-  '3.6 题库增强':        { id: '3_6_synthesized',                        label: '3.6 题库增强' },
+  '3.6 解析生成':        { id: '3_6_synthesized',                        label: '3.6 解析生成' },
+  '3.6 题库增强':        { id: '3_6_synthesized',                        label: '3.6 解析生成' },
   '3.5 去除重复题目':    { id: '3_5_deduplicated',                      label: '3.5 去除重复题目' },
   '3.4 考察领域修正':    { id: '3_4_domain_refined',                    label: '3.4 考察领域修正' },
   '3.2 题意模糊修正':    { id: '3_2_ambiguity_refined',                 label: '3.2 题意模糊修正' },
@@ -410,7 +411,7 @@ const isMcq = computed(() => {
 </script>
 
 <template>
-  <div>
+  <div class="min-w-0">
     <!-- 加载中 -->
     <div v-if="loading" class="flex items-center justify-center py-16 text-slate-400 text-sm gap-2">
       <span class="inline-block w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
@@ -432,12 +433,12 @@ const isMcq = computed(() => {
     <template v-else>
       <!-- 阶段选择器 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
-        <label class="text-sm text-slate-600 flex items-center gap-2">
+        <label class="w-full sm:w-auto text-sm text-slate-600 flex flex-col sm:flex-row sm:items-center gap-2">
           <i class="fa-solid fa-layer-group text-slate-400" />
           数据阶段
           <select
             v-model="selectedStage"
-            class="px-2 py-1.5 border border-slate-300 rounded-lg text-sm bg-white"
+            class="w-full sm:w-auto px-2 py-1.5 border border-slate-300 rounded-lg text-sm bg-white"
             :disabled="availableStages.length === 0"
           >
             <option v-if="availableStages.length === 0" value="">（暂无可用阶段）</option>
@@ -460,7 +461,7 @@ const isMcq = computed(() => {
       <div class="space-y-5">
         <!-- 统计卡片 + 题型图 -->
         <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div
               v-for="c in [
                 {
@@ -657,7 +658,7 @@ const isMcq = computed(() => {
               />
               <select
                 v-model="levelFilter"
-                class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 bg-white cursor-pointer"
+                class="flex-1 min-w-[8rem] sm:flex-initial px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 bg-white cursor-pointer"
               >
                 <option value="">全部能力层级</option>
                 <option
@@ -668,7 +669,7 @@ const isMcq = computed(() => {
               </select>
               <select
                 v-model="typeFilter"
-                class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 bg-white cursor-pointer"
+                class="flex-1 min-w-[8rem] sm:flex-initial px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 bg-white cursor-pointer"
               >
                 <option value="">全部题型</option>
                 <option
@@ -679,7 +680,7 @@ const isMcq = computed(() => {
               </select>
               <select
                 v-model="diffFilter"
-                class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 bg-white cursor-pointer"
+                class="flex-1 min-w-[8rem] sm:flex-initial px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 bg-white cursor-pointer"
               >
                 <option value="">全部难度</option>
                 <option v-for="d in ['易', '中', '难'].filter((x) => (stats?.diffDist || {})[x] > 0)" :key="d" :value="d">{{ d }}</option>
@@ -687,7 +688,7 @@ const isMcq = computed(() => {
             </div>
           </div>
           <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
+            <table class="w-full min-w-[48rem] text-left border-collapse">
               <thead>
                 <tr class="bg-slate-50/60 border-b border-slate-100">
                   <th class="px-3 py-2.5 w-10">
@@ -755,7 +756,7 @@ const isMcq = computed(() => {
               </tbody>
             </table>
           </div>
-          <div class="px-3 py-2 border-t border-slate-100 flex items-center justify-between">
+          <div class="px-3 py-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span class="text-xs text-slate-400">共 {{ filteredItems.length }} 道题目</span>
             <div v-if="totalPages > 1" class="flex items-center gap-1">
               <button
@@ -795,7 +796,7 @@ const isMcq = computed(() => {
         <div class="absolute inset-0 bg-black/40" @click="closeEdit" />
         <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
           <!-- Modal 顶栏 -->
-          <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+          <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-100 flex-shrink-0">
             <h2 class="text-sm font-semibold text-slate-800">
               {{ editState.isNew ? '新增题目' : '编辑题目' }}
               <span v-if="!editState.isNew && hasChanges()" class="ml-2 text-xs font-normal text-amber-500">有未保存的修改，关闭时自动保存</span>
@@ -810,9 +811,9 @@ const isMcq = computed(() => {
           </div>
 
           <!-- Modal 内容 -->
-          <div class="overflow-y-auto flex-1 px-6 py-5 space-y-4 text-sm">
+          <div class="overflow-y-auto flex-1 px-4 sm:px-6 py-5 space-y-4 text-sm">
             <!-- 题型 + 难度 -->
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-semibold text-slate-500 mb-1.5">题型</label>
                 <select
@@ -921,7 +922,7 @@ const isMcq = computed(() => {
           </div>
 
           <!-- Modal 底栏（新增题目时显示保存按钮；编辑时关闭即自动保存） -->
-          <div v-if="editState.isNew" class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 flex-shrink-0">
+          <div v-if="editState.isNew" class="flex items-center justify-end gap-3 px-4 sm:px-6 py-4 border-t border-slate-100 flex-shrink-0">
             <button
               type="button"
               class="px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
@@ -939,7 +940,7 @@ const isMcq = computed(() => {
               {{ editState.saving ? '保存中…' : '创建题目' }}
             </button>
           </div>
-          <div v-else class="flex items-center justify-between px-6 py-3 border-t border-slate-100 flex-shrink-0 bg-slate-50/60">
+          <div v-else class="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-t border-slate-100 flex-shrink-0 bg-slate-50/60">
             <p class="text-xs text-slate-400">关闭时自动保存修改</p>
             <button
               type="button"

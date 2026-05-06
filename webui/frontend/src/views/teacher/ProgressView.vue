@@ -29,6 +29,7 @@ const STAGE_DESCRIPTIONS: Record<string, string> = {
   '3.3 考察领域检查': '校验题目所考察的知识点是否与教材范围吻合',
   '3.4 考察领域修正': '修正与教材范围不符或跑题的题目',
   '3.5 去除重复题目': '检测并剔除语义高度相似的重复题目',
+  '3.6 解析生成': '使用 AI 为每道题生成详细解题步骤（解析）',
   '3.6 题库增强': '使用 AI 为每道题生成详细解题步骤（解析）',
   '3.7 多语言翻译': '将题目翻译为英文、法文等多语言版本',
   '3.8 选择题格式检查': '校验选择题的选项格式与答案标注是否规范',
@@ -232,41 +233,11 @@ const timelineStatusLabel: Record<StageInfo['status'], string> = {
   cancelled: '已取消',
 };
 
-function timelineDotClass(status: StageInfo['status']) {
-  const m: Record<StageInfo['status'], string> = {
-    pending: 'bg-slate-200 ring-slate-300',
-    running: 'bg-amber-400 ring-amber-200 animate-pulse',
-    succeeded: 'bg-emerald-500 ring-emerald-200',
-    failed: 'bg-rose-500 ring-rose-200',
-    skipped: 'bg-slate-300 ring-slate-200',
-    cancelled: 'bg-amber-300 ring-amber-200',
-  };
-  return m[status];
-}
-
 function timelineConnectorClass(prev: StageInfo) {
   if (prev.status === 'succeeded') return 'bg-emerald-400';
   if (prev.status === 'skipped') return 'bg-slate-300';
   if (prev.status === 'failed' || prev.status === 'cancelled') return 'bg-rose-200';
   return 'bg-slate-200';
-}
-
-function timelineTextClass(status: StageInfo['status']) {
-  const m: Record<StageInfo['status'], string> = {
-    pending: 'text-slate-400',
-    running: 'text-amber-600',
-    succeeded: 'text-emerald-600',
-    failed: 'text-rose-600',
-    skipped: 'text-slate-500',
-    cancelled: 'text-amber-700',
-  };
-  return m[status];
-}
-
-/** 时间线节点标题：仅取「1.1」「2.1」等编号前缀 */
-function stageTimelineCode(name: string) {
-  const m = name.match(/^(\d+\.\d+)/);
-  return m ? m[1] : name.split(/\s/)[0] || name;
 }
 
 function selectStage(name: string) {
@@ -667,14 +638,14 @@ function parseLines(lines: string[]) {
   }
 }
 
-// 历史回放：当 progress.json 显示某 stage 已 succeeded、但 stageProgress 缺失时补满条
-function fillSucceededStages() {
+// 历史回放：当 progress.json 显示某 stage 已进入终态、但 stageProgress 缺失时补齐进度条
+function fillTerminalStages() {
   const stages = progress.value?.stages || [];
   const cur = stageProgress.value;
   let mutated = false;
   const next = { ...cur };
   for (const s of stages) {
-    if (s.status === 'succeeded' && !next[s.name]) {
+    if ((s.status === 'succeeded' || s.status === 'skipped') && !next[s.name]) {
       next[s.name] = { current: 1, total: 1, unit: '' };
       mutated = true;
     }
@@ -722,6 +693,7 @@ const QUICK_LANG_OPTIONS: { value: QuickLang; label: string }[] = [
 const STAGE_NAME_TO_ID: Record<string, string> = {
   '3.8 选择题格式检查': '3_8_mcq_verified',
   '3.7 多语言翻译':     '3_7_translated',
+  '3.6 解析生成':       '3_6_synthesized',
   '3.6 题库增强':       '3_6_synthesized',
   '3.5 去除重复题目':   '3_5_deduplicated',
   '3.4 考察领域修正':   '3_4_domain_refined',
@@ -734,7 +706,7 @@ const STAGE_NAME_TO_ID: Record<string, string> = {
 const STAGE_ID_LABELS: Record<string, { label: string; hint: string }> = {
   '3_8_mcq_verified':                     { label: '3.8 选择题格式检查',           hint: '推荐：选择题格式已规范' },
   '3_7_translated':                       { label: '3.7 多语言翻译',            hint: '附有英/法译文' },
-  '3_6_synthesized':                      { label: '3.6 题库增强',              hint: '补充了更多题型' },
+  '3_6_synthesized':                      { label: '3.6 解析生成',              hint: '已生成详细解析' },
   '3_5_deduplicated':                     { label: '3.5 去除重复题目',          hint: '已删除重复题目' },
   '3_4_domain_refined':                   { label: '3.4 考察领域修正',          hint: '知识领域已校正' },
   '3_2_ambiguity_refined':                { label: '3.2 题意模糊修正',          hint: '已改写模糊题目' },
@@ -968,7 +940,7 @@ function subjectivityChartData(dist: Record<string, number>) {
 
 watch(
   () => progress.value?.stages?.map((s) => `${s.name}:${s.status}`).join('|'),
-  () => fillSucceededStages(),
+  () => fillTerminalStages(),
 );
 
 watch(
@@ -1076,6 +1048,7 @@ onBeforeUnmount(() => {
 
 function barPercent(info: StageProgress | undefined, status: StageInfo['status']): number {
   if (status === 'succeeded') return 100;
+  if (status === 'skipped') return 100;
   if (!info) return 0;
   if (info.indeterminate) return 100;
   if (info.total <= 0) return 0;
@@ -1084,6 +1057,7 @@ function barPercent(info: StageProgress | undefined, status: StageInfo['status']
 
 function barColorClass(info: StageProgress | undefined, status: StageInfo['status']): string {
   if (status === 'succeeded') return 'bg-emerald-300';
+  if (status === 'skipped') return 'bg-slate-300';
   if (status === 'failed' || info?.failed) return 'bg-rose-400';
   if (status === 'cancelled') return 'bg-amber-300';
   if (info?.indeterminate) return 'bg-amber-300 animate-pulse';
@@ -1097,6 +1071,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
     }
     return '已完成';
   }
+  if (status === 'skipped') return '已跳过';
   if (!info) return '';
   if (info.indeterminate) return info.phase || '进行中…';
   if (info.unit === '%') {
@@ -1109,7 +1084,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
 </script>
 
 <template>
-  <div>
+  <div class="min-w-0">
     <div v-if="error" class="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-4">
       {{ error }}
     </div>
@@ -1118,7 +1093,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
       <!-- ETA banner：仅在任务运行中时展示 -->
       <div
         v-if="eta && task.status === 'running'"
-        class="mb-3 bg-sky-50 border border-sky-200 text-sky-800 rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm"
+        class="mb-3 bg-sky-50 border border-sky-200 text-sky-800 rounded-xl px-4 py-2.5 flex items-start sm:items-center gap-2 text-sm"
       >
         <span class="text-base">⏱</span>
         <span v-if="eta.show_eta">
@@ -1134,18 +1109,18 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
         </span>
       </div>
 
-      <div class="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3 flex-wrap">
+      <div class="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
         <div class="text-sm text-slate-500">
           <span v-if="overallStatus === 'succeeded'" class="flex items-center gap-1.5 text-emerald-700 font-medium">
-            <span>✅</span><span>生成完成</span>
+            <span>✅</span><span class="font-bold">生成完成</span>
           </span>
           <span v-else-if="progress?.current_stage">当前阶段：<span class="text-slate-900 font-medium">{{ progress.current_stage }}</span></span>
           <span v-else>—</span>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto">
           <button
             v-if="overallStatus !== 'running' && overallStatus !== 'created' && overallStatus !== 'succeeded'"
-            class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
+            class="flex-1 sm:flex-initial px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
             :disabled="!!actionBusy"
             @click="onResume"
           >
@@ -1153,7 +1128,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
           </button>
           <button
             v-if="overallStatus !== 'running' && overallStatus !== 'created'"
-            class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
+            class="flex-1 sm:flex-initial px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50"
             :disabled="!!actionBusy"
             @click="onRestart"
           >
@@ -1161,7 +1136,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
           </button>
           <button
             v-if="overallStatus === 'running'"
-            class="px-3 py-1.5 text-sm border border-rose-300 rounded-lg text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+            class="flex-1 sm:flex-initial px-3 py-1.5 text-sm border border-rose-300 rounded-lg text-rose-700 hover:bg-rose-50 disabled:opacity-50"
             :disabled="!!actionBusy"
             @click="onStop"
           >
@@ -1238,7 +1213,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
         </div>
 
         <!-- 题型分布 + 难度分布 + 主客观比（扇形图） -->
-        <div class="grid sm:grid-cols-3 gap-x-4 gap-y-7 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-7 mb-6">
           <!-- 题型 -->
           <div class="flex flex-col rounded-xl border border-sky-100 bg-sky-50/90 p-4 sm:p-5">
             <div class="text-sm font-semibold text-slate-700 mb-3 w-full text-center tracking-wide">题型分布</div>
@@ -1316,7 +1291,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
         </div>
 
         <!-- 快捷导出（单按钮） -->
-        <div class="border-t border-slate-100 pt-3 flex items-center justify-between">
+        <div class="border-t border-slate-100 pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span class="text-xs text-slate-400">题目已生成，可下载试卷</span>
           <button
             class="px-4 py-2 text-sm font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-700 transition-colors flex items-center gap-2"
@@ -1329,148 +1304,146 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
       </div>
 
       <div class="mt-6">
-        <h2 class="text-sm font-semibold text-slate-700 mb-3">阶段进度</h2>
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6">
+          <section aria-label="阶段时间线">
+            <h2 class="text-lg font-semibold text-slate-900 mb-1">阶段进度</h2>
+            <p class="text-sm text-slate-500 mb-4">
+              展示当前任务的完整流水线状态；点击任一阶段可查看运行时间、进度与错误详情。
+            </p>
 
-        <div
-          v-if="stageList.length"
-          class="rounded-xl border border-slate-200 bg-white/70 p-4 shadow-sm"
-          aria-label="阶段时间线"
-        >
-          <div class="grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] gap-4">
-            <div class="space-y-0">
-              <button
+            <ol
+              v-if="stageList.length"
+              class="relative"
+            >
+              <li
                 v-for="(s, idx) in stageList"
                 :key="s.name"
-                type="button"
-                class="group flex w-full items-stretch text-left focus:outline-none"
-                :aria-pressed="selectedStage?.name === s.name"
-                @click="selectStage(s.name)"
+                class="relative grid grid-cols-[2.25rem_minmax(0,1fr)] items-stretch gap-3 pb-3 last:pb-0"
               >
-                <span class="flex w-8 shrink-0 flex-col items-center">
-                  <span
-                    v-if="idx > 0"
-                    class="h-4 w-px transition-colors"
-                    :class="timelineConnectorClass(stageList[idx - 1])"
-                  />
-                  <span
-                    class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-white shadow-sm ring-2 transition-transform group-hover:scale-105"
-                    :class="timelineDotClass(s.status)"
-                  >
-                    <span
-                      v-if="selectedStage?.name === s.name"
-                      class="h-1.5 w-1.5 rounded-full bg-white"
-                    />
-                  </span>
-                  <span
-                    v-if="idx < stageList.length - 1"
-                    class="min-h-[48px] w-px flex-1 transition-colors"
-                    :class="timelineConnectorClass(s)"
-                  />
-                </span>
-                <span
-                  class="mb-2 flex min-w-0 flex-1 items-start justify-between gap-3 rounded-lg border px-3 py-2.5 transition-colors"
-                  :class="selectedStage?.name === s.name
-                    ? ['border-slate-900 bg-white shadow-sm', stageStatusClass[s.status]]
-                    : 'border-transparent hover:border-slate-200 hover:bg-white'"
-                >
-                  <span class="min-w-0">
-                    <span class="flex items-center gap-2">
-                      <span class="font-mono text-xs font-semibold text-slate-500 tabular-nums">
-                        {{ stageTimelineCode(s.name) }}
-                      </span>
-                      <span class="truncate text-sm font-medium text-slate-900">{{ s.name }}</span>
-                    </span>
-                    <span
-                      v-if="STAGE_DESCRIPTIONS[s.name]"
-                      class="mt-1 block text-xs leading-snug text-slate-500"
-                    >
-                      {{ STAGE_DESCRIPTIONS[s.name] }}
-                    </span>
-                  </span>
-                  <span
-                    class="shrink-0 text-xs font-medium"
-                    :class="timelineTextClass(s.status)"
-                  >
-                    {{ timelineStatusLabel[s.status] }}
-                  </span>
-                </span>
-              </button>
-            </div>
-
-            <div v-if="selectedStage" class="lg:border-l lg:border-slate-200 lg:pl-4">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-xs text-slate-400">选中阶段</p>
-                  <h3 class="mt-1 text-base font-semibold text-slate-900">
-                    {{ selectedStage.name }}
-                  </h3>
-                </div>
-                <span
-                  :class="['inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium', stageStatusClass[selectedStage.status]]"
-                >
-                  <span
-                    v-if="selectedStage.status === 'running'"
-                    class="inline-block h-3 w-3 rounded-full border-2 border-amber-300 border-t-amber-600 animate-spin"
-                    style="animation-duration: 1.1s"
-                    aria-label="running"
-                  />
-                  <span v-else class="leading-none">{{ stageDot[selectedStage.status] }}</span>
-                  {{ timelineStatusLabel[selectedStage.status] }}
-                </span>
-              </div>
-
-              <p
-                v-if="STAGE_DESCRIPTIONS[selectedStage.name]"
-                class="mt-3 text-sm leading-6 text-slate-600"
-              >
-                {{ STAGE_DESCRIPTIONS[selectedStage.name] }}
-              </p>
-
-              <div class="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-500">
-                <div class="rounded-lg bg-slate-50 px-3 py-2">
-                  <div class="text-slate-400">开始</div>
-                  <div class="mt-1 font-medium text-slate-700">{{ fmtTime(selectedStage.started_at) }}</div>
-                </div>
-                <div class="rounded-lg bg-slate-50 px-3 py-2">
-                  <div class="text-slate-400">结束</div>
-                  <div class="mt-1 font-medium text-slate-700">{{ fmtTime(selectedStage.finished_at) }}</div>
-                </div>
-              </div>
-
-              <template v-if="['running', 'succeeded', 'failed', 'cancelled'].includes(selectedStage.status)">
-                <div class="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div class="relative flex self-stretch items-center justify-center">
                   <div
-                    class="h-full transition-all duration-300"
-                    :class="barColorClass(stageProgress[selectedStage.name], selectedStage.status)"
-                    :style="{ width: barPercent(stageProgress[selectedStage.name], selectedStage.status) + '%' }"
+                    v-if="idx > 0"
+                    :class="[
+                      'absolute left-1/2 top-[-0.75rem] bottom-1/2 w-px -translate-x-1/2',
+                      timelineConnectorClass(stageList[idx - 1]),
+                    ]"
+                  />
+                  <button
+                    type="button"
+                    :aria-pressed="selectedStage?.name === s.name"
+                    :aria-label="`${s.name}，${timelineStatusLabel[s.status]}，点击查看详情`"
+                    :title="`查看${s.name}详情`"
+                    :class="[
+                      'relative z-10 flex h-9 w-9 items-center justify-center rounded-full border-2 text-xs font-semibold tabular-nums transition hover:scale-105',
+                      selectedStage?.name === s.name
+                        ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                        : 'border-slate-300 bg-white text-slate-500',
+                    ]"
+                    @click="selectStage(s.name)"
+                  >
+                    <span
+                      v-if="s.status === 'running'"
+                      class="inline-block h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"
+                      style="animation-duration: 1.1s"
+                      aria-label="running"
+                    />
+                    <span v-else class="leading-none">{{ stageDot[s.status] }}</span>
+                  </button>
+                  <div
+                    v-if="idx < stageList.length - 1"
+                    :class="[
+                      'absolute left-1/2 top-1/2 bottom-[-0.75rem] w-px -translate-x-1/2',
+                      timelineConnectorClass(s),
+                    ]"
                   />
                 </div>
-                <div
-                  v-if="barLabel(stageProgress[selectedStage.name], selectedStage.status)"
-                  class="mt-1 text-xs text-slate-500"
+
+                <button
+                  type="button"
+                  :aria-pressed="selectedStage?.name === s.name"
+                  class="w-full rounded-xl border p-4 text-left transition"
+                  :class="selectedStage?.name === s.name
+                    ? 'border-slate-900 bg-slate-50 shadow-sm'
+                    : 'border-slate-200 bg-white hover:border-slate-400'"
+                  @click="selectStage(s.name)"
                 >
-                  {{ barLabel(stageProgress[selectedStage.name], selectedStage.status) }}
-                </div>
-              </template>
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                        <p class="text-sm font-medium text-slate-900 leading-snug break-words">{{ s.name }}</p>
+                      </div>
+                      <p
+                        v-if="STAGE_DESCRIPTIONS[s.name]"
+                        class="text-xs text-slate-500 mt-1 leading-snug"
+                      >
+                        {{ STAGE_DESCRIPTIONS[s.name] }}
+                      </p>
+                    </div>
+                    <span
+                      :class="['shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium', stageStatusClass[s.status]]"
+                    >
+                      {{ timelineStatusLabel[s.status] }}
+                    </span>
+                  </div>
 
-              <div
-                v-if="selectedStage.error"
-                class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 break-words"
-              >
-                {{ selectedStage.error }}
-              </div>
-              <div
-                v-if="selectedStage.note"
-                class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-              >
-                {{ selectedStage.note }}
-              </div>
-            </div>
-          </div>
-        </div>
+                  <div
+                    v-if="selectedStage?.name === s.name"
+                    class="mt-4 border-t border-slate-200 pt-4"
+                  >
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-500">
+                      <div class="rounded-lg bg-white px-3 py-2 border border-slate-100">
+                        <div class="text-slate-400">开始</div>
+                        <div class="mt-1 font-medium text-slate-700">{{ fmtTime(s.started_at) }}</div>
+                      </div>
+                      <div class="rounded-lg bg-white px-3 py-2 border border-slate-100">
+                        <div class="text-slate-400">结束</div>
+                        <div class="mt-1 font-medium text-slate-700">{{ fmtTime(s.finished_at) }}</div>
+                      </div>
+                    </div>
 
-        <div v-if="!stageList.length" class="text-sm text-slate-500">
-          尚未开始或读取中...
+                    <template v-if="['running', 'succeeded', 'failed', 'cancelled', 'skipped'].includes(s.status)">
+                      <div class="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          class="h-full transition-all duration-300"
+                          :class="barColorClass(stageProgress[s.name], s.status)"
+                          :style="{ width: barPercent(stageProgress[s.name], s.status) + '%' }"
+                        />
+                      </div>
+                      <div
+                        v-if="barLabel(stageProgress[s.name], s.status)"
+                        class="mt-1 text-xs text-slate-500"
+                      >
+                        {{ barLabel(stageProgress[s.name], s.status) }}
+                      </div>
+                    </template>
+
+                    <div
+                      v-if="s.error"
+                      class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 break-words"
+                    >
+                      {{ s.error }}
+                    </div>
+                    <div
+                      v-if="s.note"
+                      class="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600"
+                    >
+                      {{ s.note }}
+                    </div>
+                    <div
+                      v-else-if="s.status === 'skipped'"
+                      class="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600"
+                    >
+                      该可选步骤未启用，任务运行时已自动跳过。
+                    </div>
+                  </div>
+                </button>
+              </li>
+            </ol>
+
+            <p v-else class="text-sm text-slate-500">
+              尚未开始或读取中...
+            </p>
+          </section>
         </div>
       </div>
 
@@ -1529,9 +1502,9 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
         @click.self="closeExportModal"
       >
         <div class="absolute inset-0 bg-black/40" @click="closeExportModal" />
-        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
           <!-- 顶栏 -->
-          <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-100">
             <h2 class="text-sm font-semibold text-slate-800">导出试卷</h2>
             <button class="text-slate-400 hover:text-slate-700 transition" @click="closeExportModal">
               <i class="fa-solid fa-xmark text-lg" />
@@ -1539,7 +1512,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
           </div>
 
           <!-- 内容 -->
-          <div class="px-6 py-5 space-y-5">
+          <div class="px-4 sm:px-6 py-5 space-y-5">
             <!-- 版本选择 Timeline -->
             <div v-if="quickAvailableStages.length > 0">
               <p class="text-xs font-semibold text-slate-500 mb-3">导出版本</p>
@@ -1682,7 +1655,7 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
           </div>
 
           <!-- 底栏 -->
-          <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div class="px-4 sm:px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
             <button
               class="px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
               @click="closeExportModal"

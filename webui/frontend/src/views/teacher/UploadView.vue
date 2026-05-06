@@ -178,7 +178,7 @@ async function submit(mode: 'wizard' | 'quick') {
     if (code === 'daily_quota_exceeded') {
       error.value = `已达每日上传上限（${err.response.data.limit} 次）`;
     } else if (code === 'llm_quota_exceeded') {
-      error.value = `今日 LLM 积分已耗尽（上限 ${err.response.data.limit?.toLocaleString()} 积分），请明日再试`;
+      error.value = `今日 AI 大模型额度已耗尽（上限 ${err.response.data.limit?.toLocaleString()} 积分），请明日再试`;
     } else if (code === 'user_has_running_task') {
       error.value = '你已有任务在跑，等它结束后再启动新任务';
     } else if (code === 'missing_llm_key') {
@@ -233,7 +233,7 @@ function backFromQuickModal() {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto">
+  <div class="max-w-2xl mx-auto min-w-0">
     <router-link
       to="/teacher/tasks"
       class="text-sm text-slate-500 hover:text-slate-900 mb-4 inline-block"
@@ -241,8 +241,8 @@ function backFromQuickModal() {
       ← 返回任务列表
     </router-link>
     <h1 class="text-2xl font-bold text-slate-900 mb-1">新建任务</h1>
-    <p class="text-sm text-slate-500 mb-3">
-      上传一份教科书、教辅书、课件等教学材料（PDF 或 PPT/PPTX 格式），<br>系统自动生成高质量习题与解析，支持一键导出为试卷。<br>生成的习题将紧扣上传素材的内容。推荐上传课本，题目会更贴近课标，达到「回归课本」的效果。
+    <p class="text-sm text-slate-500 mb-3 leading-6">
+      上传一份教科书、教辅书、课件等「任意」教学材料（PDF 或 PPT/PPTX 格式），<br>系统自动生成高质量习题与解析，并支持一键导出为试卷。<br>生成的习题将紧扣上传素材的内容。推荐上传课本，达到「回归课本」的效果。
     </p>
 
     <!-- 今日上传配额 -->
@@ -261,7 +261,7 @@ function backFromQuickModal() {
       <span v-else class="font-medium">今日上传次数已用完（{{ quota.limit }} 次），请明日再试</span>
     </div>
 
-    <!-- 今日 LLM 积分配额 -->
+    <!-- 今日 AI 大模型额度 -->
     <div
       v-if="llmQuota !== null"
       :class="[
@@ -272,19 +272,19 @@ function backFromQuickModal() {
       ]"
     >
       <span v-if="llmQuota.remaining > 0">
-        今日 LLM 配额剩余
+        今日 AI 大模型额度剩余
         <span class="font-semibold">{{ llmQuota.remaining.toLocaleString() }}</span> 积分
         （已用 {{ llmQuota.used.toLocaleString() }} / 共 {{ llmQuota.limit.toLocaleString() }}）
       </span>
-      <span v-else class="font-medium">今日 LLM 积分配额已耗尽（{{ llmQuota.limit.toLocaleString() }} 积分），请明日再试</span>
+      <span v-else class="font-medium">今日 AI 大模型额度已耗尽（{{ llmQuota.limit.toLocaleString() }} 积分），请明日再试</span>
     </div>
 
-    <div class="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
+    <div class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 space-y-5">
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-2">素材文件</label>
         <div
           :class="[
-            'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition',
+            'border-2 border-dashed rounded-xl p-5 sm:p-8 text-center cursor-pointer transition',
             dragHover ? 'border-slate-900 bg-slate-50' : 'border-slate-300 hover:border-slate-500',
           ]"
           @dragover.prevent="dragHover = true"
@@ -299,7 +299,7 @@ function backFromQuickModal() {
             <p class="text-xs mt-1">单文件 ≤ 50MB · PPT/PPTX 将自动转为 PDF 后处理</p>
           </div>
           <div v-else class="text-slate-700">
-            <p class="font-medium text-slate-900">{{ file.name }}</p>
+            <p class="font-medium text-slate-900 break-all">{{ file.name }}</p>
             <p class="text-xs text-slate-500 mt-1">{{ sizeLabel }} · 点击重新选择</p>
           </div>
         </div>
@@ -349,7 +349,7 @@ function backFromQuickModal() {
         </div>
       </div>
 
-      <div class="flex gap-3">
+      <div class="flex flex-col sm:flex-row gap-3">
         <button
           class="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:border-slate-900"
           :disabled="uploading"
@@ -393,7 +393,7 @@ function backFromQuickModal() {
           ← 返回上传页
         </button>
         <h2 class="text-lg font-bold text-slate-900 mb-1">快速开始</h2>
-        <p class="text-sm text-slate-500 mb-5">选择学段和学科，系统将使用推荐配置自动生成题目。</p>
+        <p class="text-sm text-slate-500 mb-5">请指定学段和学科。<br>目前支持我国初高中九大学科，<br>如初中数学、高中语文、高中物理等。</p>
 
         <div class="space-y-4">
           <div>
@@ -438,7 +438,7 @@ function backFromQuickModal() {
             :disabled="quickSubmitting"
             @click="closeQuickModal"
           >
-            没找到对应学段或学科？改用详细配置
+            没找到对应学段或学科？改用自定义配置
           </button>
           <button
             type="button"

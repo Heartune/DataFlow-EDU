@@ -36,7 +36,8 @@ interface ItemRow {
 const EXPORTABLE_STAGE_MAP: Record<string, { id: string; label: string }> = {
   '3.8 选择题格式检查':   { id: '3_8_mcq_verified',                        label: '3.8 选择题格式检查' },
   '3.7 多语言翻译':      { id: '3_7_translated',                          label: '3.7 多语言翻译' },
-  '3.6 题库增强':        { id: '3_6_synthesized',                          label: '3.6 题库增强' },
+  '3.6 解析生成':        { id: '3_6_synthesized',                          label: '3.6 解析生成' },
+  '3.6 题库增强':        { id: '3_6_synthesized',                          label: '3.6 解析生成' },
   '3.5 去除重复题目':    { id: '3_5_deduplicated',                        label: '3.5 去除重复题目' },
   '3.4 考察领域修正':    { id: '3_4_domain_refined',                      label: '3.4 考察领域修正' },
   '3.2 题意模糊修正':    { id: '3_2_ambiguity_refined',                   label: '3.2 题意模糊修正' },
@@ -425,13 +426,13 @@ watch(file, async () => {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center gap-3 flex-wrap mb-4">
-      <label class="text-sm text-slate-600 flex items-center gap-2">
+  <div class="min-w-0">
+    <div class="flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap mb-4">
+      <label class="w-full sm:w-auto text-sm text-slate-600 flex flex-col sm:flex-row sm:items-center gap-2">
         阶段
         <select
           v-model="stage"
-          class="px-2 py-1.5 border border-slate-300 rounded-lg text-sm"
+          class="w-full sm:w-auto px-2 py-1.5 border border-slate-300 rounded-lg text-sm"
           :disabled="availableStages.length === 0"
         >
           <option v-if="availableStages.length === 0" value="">（暂无可编辑阶段）</option>
@@ -445,7 +446,7 @@ watch(file, async () => {
           </option>
         </select>
       </label>
-      <label class="text-sm text-slate-600 flex items-center gap-2 flex-1 min-w-[14rem]">
+      <label class="w-full sm:flex-1 text-sm text-slate-600 flex flex-col sm:flex-row sm:items-center gap-2 sm:min-w-[14rem]">
         文件
         <select v-model="file" class="flex-1 px-2 py-1.5 border border-slate-300 rounded-lg text-sm">
           <option v-if="!files.length" value="">(此阶段尚无产物)</option>
@@ -477,7 +478,7 @@ watch(file, async () => {
       此阶段尚未产生任何文件。请等待 pipeline 跑到对应阶段，或切换其它阶段。
     </div>
 
-    <div v-else class="bg-white border border-slate-200 rounded-2xl overflow-hidden" style="height: calc(100vh - 280px); min-height: 420px;">
+    <div v-else class="bg-white border border-slate-200 rounded-xl sm:rounded-2xl overflow-hidden h-[62vh] min-h-[360px] sm:min-h-[420px]">
       <AgGridVue
         style="width: 100%; height: 100%;"
         :theme="theme"
@@ -495,7 +496,7 @@ watch(file, async () => {
       />
     </div>
 
-    <div v-if="files.length" class="mt-3 flex items-center justify-between text-xs text-slate-500">
+    <div v-if="files.length" class="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
       <span>每次编辑/删除自动写 <code>.bak</code> 备份；首次另存 <code>.original.bak</code></span>
       <button
         v-if="rows.length < total"

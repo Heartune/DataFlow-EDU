@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
+body,
+#app {
+  min-width: 0;
+}
+
+* {
+  min-width: 0;
+}
+
 .truncate-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

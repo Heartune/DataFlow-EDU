@@ -29,7 +29,7 @@ const EDITABLE_STAGES = new Set([
   '3_2_ambiguity_refined',                 // 3.2 题意修正
   '3_4_domain_refined',                    // 3.4 领域修正
   '3_5_deduplicated',                      // 3.5 去重
-  '3_6_synthesized',                       // 3.6 题库增强
+  '3_6_synthesized',                       // 3.6 解析生成
   '3_7_translated',                        // 3.7 翻译
   '3_8_mcq_verified',                      // 3.8 选择题校验
 ]);
@@ -78,10 +78,13 @@ const ETA_OPTIONAL_STAGES = [
   '3.3 考察领域检查',
   '3.4 考察领域修正',
   '3.5 去除重复题目',
-  '3.6 题库增强',
+  '3.6 解析生成',
   '3.7 多语言翻译',
   '3.8 选择题格式检查',
 ];
+const ETA_STAGE_NAME_ALIASES: Record<string, string> = {
+  '3.6 题库增强': '3.6 解析生成',
+};
 const ETA_OPTIONAL_STAGE_SET = new Set(ETA_OPTIONAL_STAGES);
 const ETA_REMAINING_STAGE_STATUSES = new Set(['pending', 'running']);
 const ETA_STAGE_WEIGHTS: Record<string, number> = {
@@ -94,7 +97,7 @@ const ETA_STAGE_WEIGHTS: Record<string, number> = {
   '3.3 考察领域检查': 0.8,
   '3.4 考察领域修正': 1,
   '3.5 去除重复题目': 0.5,
-  '3.6 题库增强': 1.2,
+  '3.6 解析生成': 1.2,
   '3.7 多语言翻译': 1,
   '3.8 选择题格式检查': 0.7,
 };
@@ -113,6 +116,12 @@ function etaStageWeight(stageName: unknown): number {
   if (typeof stageName !== 'string' || !stageName.trim()) return 1;
   const normalized = normalizeStageDisplayName(stageName) ?? stageName;
   return ETA_STAGE_WEIGHTS[normalized] ?? 1;
+}
+
+function normalizeEtaOptionalStageName(stageName: unknown): string | null {
+  if (typeof stageName !== 'string') return null;
+  const normalized = normalizeStageDisplayName(stageName) ?? ETA_STAGE_NAME_ALIASES[stageName] ?? stageName;
+  return ETA_OPTIONAL_STAGE_SET.has(normalized) ? normalized : null;
 }
 
 function readEtaStages(taskDir: string): EtaStage[] | null {
@@ -154,7 +163,9 @@ function estimateTotalStageWeightForEta(taskDir: string): number {
       const parsed = yaml.load(fs.readFileSync(configPath, 'utf-8')) as { enabled_stages?: unknown } | null;
       if (parsed && Array.isArray(parsed.enabled_stages)) {
         const enabledOptional = new Set(
-          parsed.enabled_stages.filter((name): name is string => typeof name === 'string' && ETA_OPTIONAL_STAGE_SET.has(name))
+          parsed.enabled_stages
+            .map(normalizeEtaOptionalStageName)
+            .filter((name): name is string => Boolean(name))
         );
         const configuredStages = [
           ...ETA_MANDATORY_STAGES,
