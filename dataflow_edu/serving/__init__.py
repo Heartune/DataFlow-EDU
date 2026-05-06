@@ -5,15 +5,6 @@ DataFlow-EDU 通用 LLM/API 客户端包。
 被 Generation、Ambiguity Cleaning、Balancing 等算子共用。
 """
 
-from dataflow_edu.serving.llm_client import (
-    call_llm,
-    get_api_delay,
-    get_max_workers,
-    interactive_config_llm,
-    init_client,
-)
-from dataflow_edu.serving.web_search_llm import call_web_search_llm
-
 __all__ = [
     "call_llm",
     "call_web_search_llm",
@@ -22,3 +13,15 @@ __all__ = [
     "interactive_config_llm",
     "init_client",
 ]
+
+
+def __getattr__(name):
+    if name == "call_web_search_llm":
+        from dataflow_edu.serving.web_search_llm import call_web_search_llm
+
+        return call_web_search_llm
+    if name in {"call_llm", "get_api_delay", "get_max_workers", "interactive_config_llm", "init_client"}:
+        from dataflow_edu.serving import llm_client
+
+        return getattr(llm_client, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

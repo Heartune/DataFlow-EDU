@@ -22,15 +22,29 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import httpx
-from openai import OpenAI
-
-from dataflow_edu.serving.llm_client import LLM_PROVIDERS
+import requests
 
 DEFAULT_MODEL = "gemini-3-flash-preview-nothinking"
 DEFAULT_PROVIDER = "blt"
 DEFAULT_TIMEOUT = 60
 DEFAULT_RETRIES = 2
+
+PROVIDER_BASE_URLS = {
+    "zaiwen": "https://back.zaiwenai.com/api/v1/ai",
+    "zgca": "http://35.220.164.252:3888/v1",
+    "gptagent": "https://gpt-agent.cc/v1",
+    "aiping": "https://www.aiping.cn/api/v1",
+    "blt": "https://api.bltcy.ai/v1",
+    "openrouter_official": "https://openrouter.ai/api/v1",
+    "openrouter": "https://openrouter.fans/v1",
+    "xiaoai": "https://xiaoai.plus/v1/",
+    "qiniu": "https://api.qnaigc.com/v1",
+    "iflytek": "https://maas-api.cn-huabei-1.xf-yun.com/v2",
+    "openai": "https://api.openai.com/v1",
+    "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
+}
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _CONFIG_FILE = _PROJECT_ROOT / ".llm_config.json"
@@ -53,6 +67,9 @@ def _load_saved_model() -> Optional[str]:
 def _resolve_model(model: Optional[str]) -> str:
     if model and model.strip():
         return model.strip()
+    env_model = os.getenv("DATAFLOW_LLM_MODEL")
+    if env_model and env_model.strip():
+        return env_model.strip()
     saved = _load_saved_model()
     if saved:
         return saved
@@ -69,16 +86,51 @@ def _resolve_api_key() -> str:
     return ""
 
 
-def _build_client(api_key: str, timeout: int) -> OpenAI:
-    # original: provider = LLM_PROVIDERS["zgca"]
-    provider = LLM_PROVIDERS[DEFAULT_PROVIDER]
-    base_url = provider["base_url"]
-    return OpenAI(
-        api_key=api_key,
-        base_url=base_url,
+def _resolve_provider() -> str:
+    return (os.getenv("DATAFLOW_LLM_PROVIDER") or DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER
+
+
+def _resolve_base_url() -> str:
+    provider = _resolve_provider()
+    env_base_url = os.getenv("DATAFLOW_LLM_BASE_URL")
+    if env_base_url and env_base_url.strip():
+        return env_base_url.strip().rstrip("/")
+    return PROVIDER_BASE_URLS.get(provider, PROVIDER_BASE_URLS[DEFAULT_PROVIDER]).rstrip("/")
+
+
+def _post_chat_completion(
+    api_key: str,
+    messages: list[dict[str, str]],
+    *,
+    model: str,
+    max_tokens: int,
+    temperature: float,
+    timeout: int,
+) -> Optional[str]:
+    url = f"{_resolve_base_url()}/chat/completions"
+    resp = requests.post(
+        url,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": False,
+        },
         timeout=timeout,
-        http_client=httpx.Client(timeout=timeout),
     )
+    resp.raise_for_status()
+    data = resp.json()
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    return content.strip() if isinstance(content, str) and content.strip() else None
 
 
 WEB_SEARCH_HINT = (
@@ -119,19 +171,15 @@ def call_web_search_llm(
     last_err: Optional[Exception] = None
     for attempt in range(max_retries + 1):
         try:
-            client = _build_client(api_key, timeout)
-            resp = client.chat.completions.create(
+            content = _post_chat_completion(
+                api_key,
+                messages,
                 model=actual_model,
-                messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 timeout=timeout,
-                stream=False,
             )
-            content = resp.choices[0].message.content
-            if isinstance(content, str) and content.strip():
-                return content.strip()
-            return None
+            return content
         except Exception as e:  # noqa: BLE001
             last_err = e
             if attempt < max_retries:

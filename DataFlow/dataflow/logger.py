@@ -1,7 +1,11 @@
 import os
 import sys
 import logging
-import colorlog
+
+try:
+    import colorlog
+except ModuleNotFoundError:
+    colorlog = None
 
 # ---------- 1) 自定义 SUCCESS 等级 ----------
 SUCCESS_LEVEL_NUM = 25
@@ -32,6 +36,17 @@ class MinLevelFilter(logging.Filter):
 
 # ---------- 3) 贴近 loguru 的 ColoredFormatter ----------
 def _make_colored_formatter():
+    if colorlog is None:
+        return logging.Formatter(
+            fmt=(
+                "%(asctime)s.%(msecs)03d"
+                " | %(levelname)-8s"
+                " | %(name)s:%(filename)s:%(funcName)s:%(lineno)d"
+                " - %(message)s"
+            ),
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
     # 颜色映射（loguru 的感觉：DEBUG/INFO 偏冷色，WARNING 黄，ERROR/CRITICAL 红，SUCCESS 绿）
     log_colors = {
         "DEBUG":    "blue",

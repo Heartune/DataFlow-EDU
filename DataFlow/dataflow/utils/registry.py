@@ -6,8 +6,12 @@ import os
 from dataflow.logger import get_logger
 from pathlib import Path
 
-from rich.console import Console
-from rich.table import Table
+try:
+    from rich.console import Console
+    from rich.table import Table
+except ModuleNotFoundError:
+    Console = None
+    Table = None
 
 import ast
 from pathlib import Path
@@ -215,6 +219,11 @@ class Registry():
         return self._obj_map.keys()
 
     def __repr__(self):
+        if Console is None or Table is None:
+            rows = [f"Registry of {self._name}"]
+            rows.extend(f"{name}: {obj}" for name, obj in sorted(self._obj_map.items()))
+            return "\n".join(rows)
+
         table = Table(title=f'Registry of {self._name}')
         table.add_column('Names', justify='left', style='cyan')
         table.add_column('Objects', justify='left', style='green')
