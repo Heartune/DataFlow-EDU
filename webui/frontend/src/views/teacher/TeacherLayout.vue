@@ -50,7 +50,7 @@ function logout() {
             <div class="w-7 h-7 rounded-full bg-slate-900 text-white grid place-items-center text-xs">
               {{ userInitial }}
             </div>
-            <span>{{ auth.user?.email }}</span>
+            <span>欢迎，{{ auth.user?.email }}</span>
           </div>
           <button
             class="text-slate-500 hover:text-rose-600"
