@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { isNavigationFailure, useRouter } from 'vue-router';
 import { api } from '@/api/client';
 
 const router = useRouter();
@@ -140,12 +140,38 @@ async function submit(mode: 'wizard' | 'quick') {
 
     if (mode === 'quick') {
       createdTaskId.value = created.task_id;
-      progress.value = '';
-      uploading.value = false;
       showQuickModal.value = true;
     } else {
-      progress.value = '上传完成，进入配置向导...';
-      router.replace(`/teacher/tasks/${created.task_id}/wizard`);
+      progress.value = '上传完成，正在打开配置向导…';
+      const taskId = created.task_id;
+      const navTimeoutMs = 60_000;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const t = window.setTimeout(() => {
+            reject(
+              new Error(
+                `配置页加载超时（${Math.round(navTimeoutMs / 1000)} 秒）。请到「任务列表」打开该任务并进入「配置」。`,
+              ),
+            );
+          }, navTimeoutMs);
+          router
+            .replace({ name: 'teacher-task-wizard', params: { id: taskId } })
+            .then((failure) => {
+              window.clearTimeout(t);
+              if (failure && isNavigationFailure(failure)) {
+                reject(new Error('暂时无法跳转，请从任务列表打开该任务的「配置」步骤。'));
+              } else {
+                resolve();
+              }
+            })
+            .catch((e: unknown) => {
+              window.clearTimeout(t);
+              reject(e instanceof Error ? e : new Error(String(e)));
+            });
+        });
+      } catch (e: unknown) {
+        error.value = e instanceof Error ? e.message : '跳转失败';
+      }
     }
   } catch (err: any) {
     const code = err?.response?.data?.error;
@@ -164,6 +190,7 @@ async function submit(mode: 'wizard' | 'quick') {
     } else {
       error.value = err?.response?.data?.message || err?.message || '提交失败';
     }
+  } finally {
     uploading.value = false;
     progress.value = '';
   }
@@ -195,6 +222,13 @@ function closeQuickModal() {
   if (createdTaskId.value) {
     router.replace(`/teacher/tasks/${createdTaskId.value}/wizard`);
   }
+}
+
+/** 关闭弹窗并留在上传页（任务已在服务端创建，可从任务列表继续处理） */
+function backFromQuickModal() {
+  if (quickSubmitting.value) return;
+  showQuickModal.value = false;
+  createdTaskId.value = '';
 }
 </script>
 
@@ -350,6 +384,14 @@ function closeQuickModal() {
       @click.self="closeQuickModal"
     >
       <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4">
+        <button
+          type="button"
+          class="w-full text-left text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-lg px-2 py-2 -mx-2 mb-2 border border-transparent hover:border-slate-200 transition"
+          :disabled="quickSubmitting"
+          @click="backFromQuickModal"
+        >
+          ← 返回上传页
+        </button>
         <h2 class="text-lg font-bold text-slate-900 mb-1">快速开始</h2>
         <p class="text-sm text-slate-500 mb-5">选择学段和学科，系统将使用推荐配置自动生成题目。</p>
 
@@ -389,18 +431,18 @@ function closeQuickModal() {
           <p v-if="quickError" class="text-sm text-rose-600">{{ quickError }}</p>
         </div>
 
-        <div class="flex gap-3 mt-6">
+        <div class="flex flex-col gap-3 mt-6">
           <button
             type="button"
-            class="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:border-slate-500 text-sm"
+            class="w-full py-2 px-3 border border-slate-300 rounded-lg text-slate-600 hover:border-slate-500 text-sm text-center leading-snug"
             :disabled="quickSubmitting"
             @click="closeQuickModal"
           >
-            改用详细配置
+            没找到对应学段或学科？改用详细配置
           </button>
           <button
             type="button"
-            class="flex-1 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 text-sm font-medium"
+            class="w-full py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 text-sm font-medium"
             :disabled="quickSubmitting"
             @click="quickConfirm"
           >

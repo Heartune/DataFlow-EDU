@@ -10,11 +10,8 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const COMPETENCY_CACHE_KEY = 'edu_competency_suggest_cache_v1';
 
-/** 预设 id（与后端 / YAML 一致）→ 界面展示名 */
 const PRESET_LABELS: Record<string, string> = {
-  // 高中学科
   senior_biology: '高中生物',
   senior_chinese: '高中语文',
   senior_history: '高中历史',
@@ -24,7 +21,6 @@ const PRESET_LABELS: Record<string, string> = {
   senior_chemistry: '高中化学',
   senior_politics: '高中政治',
   senior_geography: '高中地理',
-  // 初中学科
   junior_chinese: '初中语文',
   junior_math: '初中数学',
   junior_english: '初中英语',
@@ -36,29 +32,6 @@ const PRESET_LABELS: Record<string, string> = {
   junior_geography: '初中地理',
 };
 
-/** 预设 id → 一句话简介（浅显易懂） */
-const PRESET_DESCRIPTIONS: Record<string, string> = {
-  senior_biology:  '覆盖分子与细胞、遗传与进化、稳态与调节等，考察生命观念、科学探究等四大素养',
-  senior_chinese:  '覆盖古代诗文、现当代文学与写作思辨等，考察语言建构与文化传承等四大素养',
-  senior_history:  '中外通史，从古代文明到当代世界，考察史料实证、时空观念与家国情怀等素养',
-  senior_math:     '覆盖函数、导数、概率统计与几何向量等，考察数学抽象、逻辑推理等六大素养',
-  senior_physics:  '覆盖力学、电磁、热学与近代物理等，考察物理观念、科学思维与实验探究等素养',
-  senior_english:  '覆盖听说读写与跨文化交际等，以真实语境考察语言能力与思维品质',
-  senior_chemistry:'覆盖物质结构、反应原理与有机化学等，考察宏微辨识与证据推理等五大素养',
-  senior_politics: '覆盖经济、政治、文化与哲学等，考察政治认同、法治意识等四大核心素养',
-  senior_geography:'覆盖自然地理、人文地理与区域发展等，考察人地协调观与综合思维等核心素养',
-  junior_chinese:  '包括字词积累、古诗文阅读与各类写作训练等',
-  junior_math:     '包括数与代数、图形几何、一次/二次函数与概率初步等',
-  junior_english:  '基础词汇语法、日常对话与阅读理解，词汇量与语法难度对标初中课标',
-  junior_physics:  '考察力学、声光热、压强浮力等',
-  junior_chemistry:'考察物质构成、化学反应方程式与酸碱盐等',
-  junior_biology:  '包括生物与环境、细胞结构、遗传进化与生态保护等',
-  junior_politics: '涵盖青春期成长、法律常识与公民责任等，覆盖道德与法治全册内容',
-  junior_history:  '考察时空观念、史料实证与家国情怀等',
-  junior_geography:'地球地图基础、世界地理与中国自然人文地理等',
-};
-
-/** 学科卡片顺序：语数英物化生政史地（与 preset id 后缀一致，如 senior_chinese） */
 const PRESET_SUBJECT_ORDER = [
   'chinese',
   'math',
@@ -71,44 +44,31 @@ const PRESET_SUBJECT_ORDER = [
   'geography',
 ];
 
-function presetSubjectSortKey(id: string): number {
+/** 预设 id 中的学科段，如 senior_chinese → chinese */
+function presetSubjectSlug(id: string): string {
   const m = id.match(/^(?:senior|junior)_(.+)$/);
-  if (!m) return PRESET_SUBJECT_ORDER.length;
-  const i = PRESET_SUBJECT_ORDER.indexOf(m[1]);
-  return i === -1 ? PRESET_SUBJECT_ORDER.length : i;
+  return m?.[1] ?? '';
 }
 
-function sortPresetsBySubject(ids: string[]): string[] {
-  return [...ids].sort(
-    (a, b) => presetSubjectSortKey(a) - presetSubjectSortKey(b) || a.localeCompare(b),
-  );
+/** 学科 tiles 前置图标：单字徽章，与课表简称一致 */
+const PRESET_SUBJECT_BADGE: Record<string, string> = {
+  chinese: '语',
+  math: '数',
+  english: '英',
+  physics: '物',
+  chemistry: '化',
+  biology: '生',
+  politics: '政',
+  history: '史',
+  geography: '地',
+};
+
+function presetSubjectBadgeChar(id: string): string {
+  return PRESET_SUBJECT_BADGE[presetSubjectSlug(id)] ?? '?';
 }
 
-function presetLabel(id: string): string {
-  return PRESET_LABELS[id] ?? id;
-}
-
-function presetDesc(id: string): string {
-  return PRESET_DESCRIPTIONS[id] ?? '';
-}
-
-/** 学科选择 Tab */
-const subjectTab = ref<'senior' | 'junior' | 'custom'>('senior');
-
-const seniorPresets = computed(() =>
-  sortPresetsBySubject(presets.value.filter((p) => p.startsWith('senior_'))),
-);
-const juniorPresets = computed(() =>
-  sortPresetsBySubject(presets.value.filter((p) => p.startsWith('junior_'))),
-);
-const otherPresets  = computed(() => presets.value.filter(p => !p.startsWith('senior_') && !p.startsWith('junior_')));
-
-const customPresetId = ref('');
-
-function applyCustomPreset() {
-  const id = customPresetId.value.trim();
-  if (id) applyPreset(id);
-}
+type SourceType = 'official_preset' | 'user_template' | 'recent' | 'custom';
+type SuggestTarget = 'taxonomy' | 'ability_levels' | 'question_types';
 
 interface AbilityLevel {
   name: string;
@@ -133,42 +93,29 @@ interface DifficultyDist {
   hard: number;
 }
 
-const presets = ref<string[]>([]);
-const presetsLoading = ref(false);
-const selectedPreset = ref('');
-const taxonomy = ref<TaxonomyItem[]>([]);
-const abilityLevels = ref<AbilityLevel[]>([]);
-const questionTypes = ref<QuestionType[]>([]);
-const difficulty = ref<DifficultyDist>({ easy: 0.3, medium: 0.5, hard: 0.2 });
-
-const step = ref(1);
-const error = ref('');
-const info = ref('');
-let infoDismissTimer: ReturnType<typeof setTimeout> | null = null;
-
-function showTransientInfo(message: string, ms = 3000) {
-  if (infoDismissTimer) {
-    clearTimeout(infoDismissTimer);
-    infoDismissTimer = null;
-  }
-  info.value = message;
-  infoDismissTimer = setTimeout(() => {
-    info.value = '';
-    infoDismissTimer = null;
-  }, ms);
+interface ConfigSnapshot {
+  preset?: string | null;
+  source_type?: SourceType;
+  source_id?: string | null;
+  grade?: string;
+  subject?: string;
+  taxonomy?: TaxonomyItem[];
+  ability_levels?: AbilityLevel[];
+  question_types?: QuestionType[];
+  difficulty_distribution?: DifficultyDist;
+  default_difficulty_distribution?: Record<string, number>;
+  enabled_stages?: string[];
 }
 
-const submitting = ref(false);
-const presetLoading = ref(false);
-const existingLoaded = ref(false);
-
-const readonly = computed(() => {
-  return props.taskStatus === 'running' || props.taskStatus === 'succeeded';
-});
-
-const totalSteps = 5;
-
-// ============== 步骤选择（Step 5）==============
+interface SavedConfigItem {
+  id: string;
+  name: string;
+  config: ConfigSnapshot;
+  updated_at?: number;
+  used_at?: number;
+  source_type?: string;
+  source_id?: string | null;
+}
 
 interface OptionalStage {
   name: string;
@@ -190,22 +137,241 @@ const OPTIONAL_STAGES: OptionalStage[] = [
 
 const ALL_OPTIONAL_NAMES = new Set(OPTIONAL_STAGES.map((s) => s.name));
 const DEFAULT_DISABLED = new Set(['3.7 多语言翻译']);
+const totalSteps = 6;
+const NEEDS_MAX = 500;
+const DEFAULT_CUSTOM_QUESTION_TYPES: QuestionType[] = [
+  { name: '选择题', weight: 0.25 },
+  { name: '填空题', weight: 0.15 },
+  { name: '判断题', weight: 0.1 },
+  { name: '简答题', weight: 0.25 },
+  { name: '综合题', weight: 0.25 },
+];
+const DEFAULT_ENABLED_STAGES = OPTIONAL_STAGES.map((s) => s.name).filter((n) => !DEFAULT_DISABLED.has(n));
 
+const presets = ref<string[]>([]);
+const templates = ref<SavedConfigItem[]>([]);
+const recents = ref<SavedConfigItem[]>([]);
+const presetsLoading = ref(false);
+const libraryLoading = ref(false);
+
+const selectedPreset = ref('');
+const sourceType = ref<SourceType>('custom');
+const sourceId = ref<string | null>(null);
+const sourceName = ref('新建自定义配置');
+const grade = ref('');
+const subject = ref('');
+const taxonomy = ref<TaxonomyItem[]>([]);
+const abilityLevels = ref<AbilityLevel[]>([]);
+const questionTypes = ref<QuestionType[]>(DEFAULT_CUSTOM_QUESTION_TYPES.map((q) => ({ ...q })));
+const difficulty = ref<DifficultyDist>({ easy: 0.3, medium: 0.5, hard: 0.2 });
 const enabledStages = ref<Set<string>>(
-  new Set(OPTIONAL_STAGES.map((s) => s.name).filter((n) => !DEFAULT_DISABLED.has(n))),
+  new Set(DEFAULT_ENABLED_STAGES),
 );
 
-function toggleStage(s: OptionalStage) {
-  if (readonly.value) return;
-  const next = new Set(enabledStages.value);
-  if (next.has(s.name)) {
-    next.delete(s.name);
-    if (s.pairName) next.delete(s.pairName);
-  } else {
-    next.add(s.name);
-    if (s.pairName) next.add(s.pairName);
+const step = ref(1);
+const error = ref('');
+const info = ref('');
+const submitting = ref(false);
+const presetLoading = ref(false);
+const saveTemplateOpen = ref(false);
+const templateName = ref('');
+let infoDismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+const suggestOpen = ref(false);
+const suggestTarget = ref<SuggestTarget>('taxonomy');
+const suggestNeeds = ref('');
+const suggestLoading = ref(false);
+const suggestError = ref('');
+const suggestItems = ref<unknown[]>([]);
+const suggestState = reactive({ source: '' as 'live' | '' });
+
+const readonly = computed(() => props.taskStatus === 'running' || props.taskStatus === 'succeeded');
+const showCustomTemplatePrompt = computed(() => step.value === 5 && !readonly.value && sourceType.value === 'custom');
+
+function presetSubjectSortKey(id: string): number {
+  const m = id.match(/^(?:senior|junior)_(.+)$/);
+  if (!m) return PRESET_SUBJECT_ORDER.length;
+  const i = PRESET_SUBJECT_ORDER.indexOf(m[1]);
+  return i === -1 ? PRESET_SUBJECT_ORDER.length : i;
+}
+
+function sortPresetsBySubject(ids: string[]): string[] {
+  return [...ids].sort(
+    (a, b) => presetSubjectSortKey(a) - presetSubjectSortKey(b) || a.localeCompare(b),
+  );
+}
+
+function presetLabel(id: string): string {
+  return PRESET_LABELS[id] ?? id;
+}
+
+const seniorPresets = computed(() =>
+  sortPresetsBySubject(presets.value.filter((p) => p.startsWith('senior_'))),
+);
+const juniorPresets = computed(() =>
+  sortPresetsBySubject(presets.value.filter((p) => p.startsWith('junior_'))),
+);
+
+const sumQuestionTypes = computed(() =>
+  questionTypes.value.reduce((s, q) => s + (Number(q.weight) || 0), 0),
+);
+const sumDifficulty = computed(
+  () =>
+    (Number(difficulty.value.easy) || 0) +
+    (Number(difficulty.value.medium) || 0) +
+    (Number(difficulty.value.hard) || 0),
+);
+const canNext = computed(() => {
+  if (step.value === 1) return !!grade.value.trim() && !!subject.value.trim() && !presetLoading.value;
+  return true;
+});
+
+const selectedSourceSummary = computed(() => {
+  const g = grade.value.trim() || '未填写学段';
+  const s = subject.value.trim() || '未填写学科';
+  return `${sourceName.value} · ${g} · ${s}`;
+});
+
+const presetColors = ['bg-rose-300', 'bg-amber-300', 'bg-emerald-300', 'bg-sky-300', 'bg-purple-300', 'bg-pink-300', 'bg-orange-300'];
+const qtBars = computed(() => {
+  const total = sumQuestionTypes.value || 1;
+  return questionTypes.value.map((q, i) => ({
+    name: q.name,
+    pct: ((Number(q.weight) || 0) / total) * 100,
+    color: presetColors[i % presetColors.length],
+  }));
+});
+
+function showTransientInfo(message: string, ms = 3000) {
+  if (infoDismissTimer) clearTimeout(infoDismissTimer);
+  info.value = message;
+  infoDismissTimer = setTimeout(() => {
+    info.value = '';
+    infoDismissTimer = null;
+  }, ms);
+}
+
+function difficultyFromConfig(cfg: ConfigSnapshot): DifficultyDist {
+  const direct = cfg.difficulty_distribution;
+  if (direct) {
+    return {
+      easy: Number(direct.easy ?? 0.3),
+      medium: Number(direct.medium ?? 0.5),
+      hard: Number(direct.hard ?? 0.2),
+    };
   }
-  enabledStages.value = next;
+  const d = cfg.default_difficulty_distribution;
+  return {
+    easy: Number(d?.easy ?? d?.['易'] ?? 0.3),
+    medium: Number(d?.medium ?? d?.['中'] ?? 0.5),
+    hard: Number(d?.hard ?? d?.['难'] ?? 0.2),
+  };
+}
+
+function normalizeTaxonomy(raw: unknown): TaxonomyItem[] {
+  return Array.isArray(raw)
+    ? raw.map((t: any) => ({
+        name: String(t?.name || ''),
+        subcategories: Array.isArray(t?.subcategories) ? t.subcategories.map(String) : [],
+      }))
+    : [];
+}
+
+function normalizeAbility(raw: unknown): AbilityLevel[] {
+  return Array.isArray(raw)
+    ? raw.map((a: any) => ({
+        name: String(a?.name || ''),
+        weight: Number(a?.weight ?? 0.25),
+        description: String(a?.description || ''),
+        sublevels: Array.isArray(a?.sublevels) ? a.sublevels.map(String) : [],
+      }))
+    : [];
+}
+
+function normalizeQuestionTypes(raw: unknown): QuestionType[] {
+  return Array.isArray(raw)
+    ? raw.map((q: any) => ({
+        name: String(q?.name || ''),
+        weight: Number(q?.weight ?? 0.25),
+      }))
+    : [];
+}
+
+function cloneDefaultCustomQuestionTypes(): QuestionType[] {
+  return DEFAULT_CUSTOM_QUESTION_TYPES.map((q) => ({ ...q }));
+}
+
+function buildBlankCustomConfig(): ConfigSnapshot {
+  return {
+    preset: null,
+    source_type: 'custom',
+    source_id: null,
+    grade: '',
+    subject: '',
+    taxonomy: [],
+    ability_levels: [],
+    question_types: cloneDefaultCustomQuestionTypes(),
+    difficulty_distribution: { easy: 0.3, medium: 0.5, hard: 0.2 },
+    enabled_stages: [...DEFAULT_ENABLED_STAGES],
+  };
+}
+
+function hasUsableQuestionTypes(items: QuestionType[]): boolean {
+  return items.some((q) => q.name.trim());
+}
+
+function shouldBackfillCustomQuestionTypes(
+  cfg: ConfigSnapshot,
+  meta: { type: SourceType; id?: string | null; name: string },
+): boolean {
+  if (cfg.source_type === 'custom' || meta.type === 'custom') return true;
+  return !cfg.preset && meta.type !== 'official_preset';
+}
+
+function ensureCustomQuestionTypes() {
+  if (sourceType.value !== 'official_preset' && !hasUsableQuestionTypes(questionTypes.value)) {
+    questionTypes.value = cloneDefaultCustomQuestionTypes();
+  }
+}
+
+function applyConfigSnapshot(cfg: ConfigSnapshot, meta: { type: SourceType; id?: string | null; name: string }) {
+  sourceType.value = meta.type;
+  sourceId.value = meta.id ?? null;
+  sourceName.value = meta.name;
+  selectedPreset.value = meta.type === 'official_preset' ? String(meta.id || cfg.preset || '') : String(cfg.preset || '');
+  grade.value = String(cfg.grade || '');
+  subject.value = String(cfg.subject || '');
+  taxonomy.value = normalizeTaxonomy(cfg.taxonomy);
+  abilityLevels.value = normalizeAbility(cfg.ability_levels);
+  const normalizedQuestionTypes = normalizeQuestionTypes(cfg.question_types);
+  questionTypes.value =
+    hasUsableQuestionTypes(normalizedQuestionTypes) || !shouldBackfillCustomQuestionTypes(cfg, meta)
+      ? normalizedQuestionTypes
+      : cloneDefaultCustomQuestionTypes();
+  difficulty.value = difficultyFromConfig(cfg);
+  if (Array.isArray(cfg.enabled_stages)) {
+    enabledStages.value = new Set(cfg.enabled_stages.filter((n) => ALL_OPTIONAL_NAMES.has(n)));
+  }
+  step.value = 1;
+  saveTemplateOpen.value = false;
+}
+
+function buildCurrentConfig(): ConfigSnapshot {
+  return {
+    preset: selectedPreset.value || null,
+    source_type: sourceType.value,
+    source_id: sourceId.value,
+    grade: grade.value.trim(),
+    subject: subject.value.trim(),
+    taxonomy: taxonomy.value,
+    ability_levels: abilityLevels.value,
+    question_types:
+      sourceType.value !== 'official_preset' && !hasUsableQuestionTypes(questionTypes.value)
+        ? cloneDefaultCustomQuestionTypes()
+        : questionTypes.value,
+    difficulty_distribution: difficulty.value,
+    enabled_stages: [...enabledStages.value],
+  };
 }
 
 async function loadPresets() {
@@ -220,39 +386,43 @@ async function loadPresets() {
   }
 }
 
+async function loadUserLibrary() {
+  libraryLoading.value = true;
+  try {
+    const [templateResp, recentResp] = await Promise.all([
+      api.get('/user-config/templates'),
+      api.get('/user-config/recents', { params: { limit: 5 } }),
+    ]);
+    templates.value = Array.isArray(templateResp.data) ? templateResp.data : [];
+    recents.value = Array.isArray(recentResp.data) ? recentResp.data : [];
+  } catch {
+    templates.value = [];
+    recents.value = [];
+  } finally {
+    libraryLoading.value = false;
+  }
+}
+
 async function applyPreset(name: string) {
-  if (!name) return;
+  if (!name || readonly.value) return;
+  if (sourceType.value === 'official_preset' && selectedPreset.value === name) {
+    error.value = '';
+    applyConfigSnapshot(buildBlankCustomConfig(), { type: 'custom', id: null, name: '新建自定义配置' });
+    return;
+  }
   presetLoading.value = true;
+  error.value = '';
   try {
     const { data } = await api.get(`/config/presets/${encodeURIComponent(name)}`);
-    taxonomy.value = Array.isArray(data?.taxonomy) ? data.taxonomy : [];
-    abilityLevels.value = Array.isArray(data?.ability_levels)
-      ? data.ability_levels.map((a: any) => ({
-          name: String(a.name || ''),
-          weight: Number(a.weight ?? 0.25),
-          description: String(a.description || ''),
-          sublevels: Array.isArray(a.sublevels) ? a.sublevels.map(String) : [],
-        }))
-      : [];
-    questionTypes.value = Array.isArray(data?.question_types)
-      ? data.question_types.map((q: any) => ({
-          name: String(q.name || ''),
-          weight: Number(q.weight ?? 0.25),
-        }))
-      : [];
-    if (data?.difficulty_distribution) {
-      difficulty.value = {
-        easy: Number(data.difficulty_distribution.easy ?? 0.3),
-        medium: Number(data.difficulty_distribution.medium ?? 0.5),
-        hard: Number(data.difficulty_distribution.hard ?? 0.2),
-      };
-    }
-    selectedPreset.value = name;
-    // 自动切换到对应分组 tab
-    if (name.startsWith('senior_')) subjectTab.value = 'senior';
-    else if (name.startsWith('junior_')) subjectTab.value = 'junior';
-    else subjectTab.value = 'custom';
-    showTransientInfo(`已加载 ${presetLabel(name)} 预设默认值，可继续微调或跳过余下步骤`);
+    applyConfigSnapshot(
+      {
+        ...data,
+        preset: name,
+        source_type: 'official_preset',
+        source_id: name,
+      },
+      { type: 'official_preset', id: name, name: presetLabel(name) },
+    );
   } catch (err: any) {
     error.value = err?.response?.data?.error || err?.message || '加载预设失败';
   } finally {
@@ -260,70 +430,32 @@ async function applyPreset(name: string) {
   }
 }
 
+function applySaved(item: SavedConfigItem, type: 'user_template' | 'recent') {
+  if (readonly.value) return;
+  applyConfigSnapshot(item.config, { type, id: item.id, name: item.name });
+  showTransientInfo(`已载入 ${item.name}`);
+}
+
+function createCustom() {
+  if (readonly.value) return;
+  error.value = '';
+  applyConfigSnapshot(buildBlankCustomConfig(), { type: 'custom', id: null, name: '新建自定义配置' });
+}
+
 async function loadExistingConfig() {
   try {
     const { data } = await api.get(`/tasks/${props.id}/config`);
     if (data?.exists && data.config) {
-      const cfg = data.config;
-      if (Array.isArray(cfg.taxonomy)) taxonomy.value = cfg.taxonomy;
-      if (Array.isArray(cfg.ability_levels)) {
-        abilityLevels.value = cfg.ability_levels.map((a: any) => ({
-          name: String(a.name || ''),
-          weight: Number(a.weight ?? 0.25),
-          description: String(a.description || ''),
-          sublevels: Array.isArray(a.sublevels) ? a.sublevels.map(String) : [],
-        }));
-      }
-      if (Array.isArray(cfg.question_types)) {
-        questionTypes.value = cfg.question_types.map((q: any) => ({
-          name: String(q.name || ''),
-          weight: Number(q.weight ?? 0.25),
-        }));
-      }
-      if (cfg.difficulty_distribution) {
-        difficulty.value = {
-          easy: Number(cfg.difficulty_distribution.easy ?? 0.3),
-          medium: Number(cfg.difficulty_distribution.medium ?? 0.5),
-          hard: Number(cfg.difficulty_distribution.hard ?? 0.2),
-        };
-      }
-      if (cfg.preset && typeof cfg.preset === 'string') {
-        selectedPreset.value = cfg.preset;
-        if (cfg.preset.startsWith('senior_')) subjectTab.value = 'senior';
-        else if (cfg.preset.startsWith('junior_')) subjectTab.value = 'junior';
-        else subjectTab.value = 'custom';
-      }
-      if (Array.isArray(cfg.enabled_stages)) {
-        const saved = new Set<string>(cfg.enabled_stages.filter((n: unknown) => typeof n === 'string'));
-        // 只恢复在 OPTIONAL_STAGES 中定义的条目
-        enabledStages.value = new Set([...saved].filter((n) => ALL_OPTIONAL_NAMES.has(n)));
-      }
-      existingLoaded.value = true;
+      const cfg = data.config as ConfigSnapshot;
+      const id = cfg.source_id || cfg.preset || null;
+      const type = cfg.source_type || (cfg.preset ? 'official_preset' : 'custom');
+      const name = type === 'official_preset' && id ? presetLabel(id) : '已保存任务配置';
+      applyConfigSnapshot(cfg, { type, id, name });
     }
   } catch {
-    // ignore
+    /* ignore */
   }
 }
-
-const sumQuestionTypes = computed(() =>
-  questionTypes.value.reduce((s, q) => s + (Number(q.weight) || 0), 0),
-);
-
-const sumAbility = computed(() =>
-  abilityLevels.value.reduce((s, a) => s + (Number(a.weight) || 0), 0),
-);
-
-const sumDifficulty = computed(
-  () =>
-    (Number(difficulty.value.easy) || 0) +
-    (Number(difficulty.value.medium) || 0) +
-    (Number(difficulty.value.hard) || 0),
-);
-
-const canNext = computed(() => {
-  if (step.value === 1) return !!selectedPreset.value && !presetLoading.value;
-  return true;
-});
 
 function next() {
   if (step.value < totalSteps) step.value += 1;
@@ -331,82 +463,63 @@ function next() {
 function prev() {
   if (step.value > 1) step.value -= 1;
 }
-function skip() {
-  next();
-}
 
+function addTaxonomy() {
+  taxonomy.value.push({ name: '新知识大类', subcategories: ['新知识小类'] });
+}
+function removeTaxonomy(idx: number) {
+  taxonomy.value.splice(idx, 1);
+}
+function addSubcategory(item: TaxonomyItem) {
+  item.subcategories.push('新知识小类');
+}
+function removeSubcategory(item: TaxonomyItem, idx: number) {
+  item.subcategories.splice(idx, 1);
+}
+function addAbility() {
+  abilityLevels.value.push({ name: '新核心素养', weight: 0.25, description: '', sublevels: [] });
+}
 function removeAbility(idx: number) {
   abilityLevels.value.splice(idx, 1);
 }
-
-// ============== 联网素养建议 ==============
-interface SuggestItem {
-  name: string;
-  dimension?: string;
-  description?: string;
-  source_url?: string;
-  _checked?: boolean;
+function removeSublevel(level: AbilityLevel, idx: number) {
+  level.sublevels = (level.sublevels || []).filter((_, i) => i !== idx);
 }
-
-const suggestOpen = ref(false);
-const suggestNeeds = ref('');
-const suggestLoading = ref(false);
-const suggestError = ref('');
-const suggestItems = ref<SuggestItem[]>([]);
-const NEEDS_MAX = 500;
-const suggestState = reactive({ source: '' as 'cache' | 'live' | '' });
-
-function suggestCacheKey(subject: string, book: string, needs: string): string {
-  // 简易 cache key：subject|book|trim+lower(needs)，避免引入额外依赖
-  return [subject, book, needs.replace(/\s+/g, ' ').trim().toLowerCase()].join('||');
+function addSublevel(level: AbilityLevel) {
+  const subs = level.sublevels || (level.sublevels = []);
+  subs.push('新子层级');
 }
-
-function readSuggestCache(key: string): SuggestItem[] | null {
-  try {
-    const raw = localStorage.getItem(COMPETENCY_CACHE_KEY);
-    if (!raw) return null;
-    const obj = JSON.parse(raw) as Record<string, { items: SuggestItem[]; ts: number }>;
-    const hit = obj[key];
-    if (!hit || !Array.isArray(hit.items)) return null;
-    // 24h TTL
-    if (Date.now() - hit.ts > 24 * 60 * 60 * 1000) return null;
-    return hit.items;
-  } catch {
-    return null;
+function removeQT(idx: number) {
+  questionTypes.value.splice(idx, 1);
+}
+function addQT() {
+  questionTypes.value.push({ name: '新题型', weight: 0.1 });
+}
+function toggleStage(s: OptionalStage) {
+  if (readonly.value) return;
+  const nextSet = new Set(enabledStages.value);
+  if (nextSet.has(s.name)) {
+    nextSet.delete(s.name);
+    if (s.pairName) nextSet.delete(s.pairName);
+  } else {
+    nextSet.add(s.name);
+    if (s.pairName) nextSet.add(s.pairName);
   }
+  enabledStages.value = nextSet;
 }
 
-function writeSuggestCache(key: string, items: SuggestItem[]) {
-  try {
-    const raw = localStorage.getItem(COMPETENCY_CACHE_KEY);
-    const obj = raw ? (JSON.parse(raw) as Record<string, { items: SuggestItem[]; ts: number }>) : {};
-    obj[key] = { items, ts: Date.now() };
-    // 限制最多保留 16 条
-    const keys = Object.keys(obj);
-    if (keys.length > 16) {
-      keys
-        .map((k) => ({ k, ts: obj[k].ts }))
-        .sort((a, b) => a.ts - b.ts)
-        .slice(0, keys.length - 16)
-        .forEach((it) => delete obj[it.k]);
-    }
-    localStorage.setItem(COMPETENCY_CACHE_KEY, JSON.stringify(obj));
-  } catch {
-    /* ignore quota errors */
-  }
-}
-
-function openSuggest() {
-  if (!selectedPreset.value) {
-    error.value = '请先在第 1 步选择学科';
+function openSuggest(target: SuggestTarget) {
+  if (!grade.value.trim() || !subject.value.trim()) {
+    error.value = '请先填写学段和学科';
     step.value = 1;
     return;
   }
+  suggestTarget.value = target;
   suggestOpen.value = true;
   suggestError.value = '';
   suggestItems.value = [];
-  suggestState.source = '';
   suggestNeeds.value = '';
+  suggestState.source = '';
 }
 
 function closeSuggest() {
@@ -416,172 +529,156 @@ function closeSuggest() {
 
 async function fetchSuggest() {
   suggestError.value = '';
-  if (!props.taskName) {
-    suggestError.value = '当前任务缺少教材名，无法发起检索';
-    return;
-  }
   if (suggestNeeds.value.length > NEEDS_MAX) {
     suggestError.value = `个性化需求最长 ${NEEDS_MAX} 字`;
     return;
   }
-  const subject = selectedPreset.value;
-  const book = props.taskName;
-  const needs = suggestNeeds.value.trim();
-  const key = suggestCacheKey(subject, book, needs);
-  const cached = readSuggestCache(key);
-  if (cached && cached.length) {
-    suggestItems.value = cached.map((it) => ({ ...it, _checked: true }));
-    suggestState.source = 'cache';
-    return;
-  }
   suggestLoading.value = true;
   try {
-    const { data } = await api.post('/competency/suggest', {
-      subject,
-      book,
-      needs,
+    const { data } = await api.post('/config/suggest', {
+      target: suggestTarget.value,
+      grade: grade.value.trim(),
+      subject: subject.value.trim(),
+      book: props.taskName || '未指定教材',
+      needs: suggestNeeds.value.trim(),
     });
-    const items = Array.isArray(data?.competencies) ? (data.competencies as SuggestItem[]) : [];
+    const items = Array.isArray(data?.items) ? data.items : [];
     if (!items.length) {
       suggestError.value = '联网模型未返回有效建议，请稍后重试或缩短个性化需求';
       return;
     }
-    suggestItems.value = items.map((it) => ({ ...it, _checked: true }));
+    suggestItems.value = items;
     suggestState.source = 'live';
-    writeSuggestCache(key, items);
   } catch (err: any) {
     const code = err?.response?.data?.error;
     const msg = err?.response?.data?.message;
-    if (code === 'missing_llm_key') {
-      suggestError.value = 'LLM Key 未配置，请联系管理员';
-    } else if (code === 'rate_limited') {
-      suggestError.value = msg || '调用过于频繁，请稍后再试';
-    } else if (code === 'needs_too_long') {
-      suggestError.value = msg || `个性化需求最长 ${NEEDS_MAX} 字`;
-    } else if (err?.response?.status === 504) {
-      suggestError.value = '联网 LLM 调用超时（30s），请稍后再试';
-    } else {
-      suggestError.value = msg || code || err?.message || '联网建议失败';
-    }
+    if (code === 'missing_llm_key') suggestError.value = 'LLM Key 未配置，请联系管理员';
+    else if (code === 'rate_limited') suggestError.value = msg || '调用过于频繁，请稍后再试';
+    else if (err?.response?.status === 504) suggestError.value = '联网 LLM 调用超时（30s），请稍后再试';
+    else suggestError.value = msg || code || err?.message || '联网建议失败';
   } finally {
     suggestLoading.value = false;
   }
 }
 
-function applySelectedSuggestions() {
-  const picked = suggestItems.value.filter((it) => it._checked);
-  if (!picked.length) {
-    closeSuggest();
-    return;
+function mergeTaxonomy(items: TaxonomyItem[]) {
+  const map = new Map(taxonomy.value.map((t) => [t.name, t]));
+  for (const item of items) {
+    const name = String(item.name || '').trim();
+    if (!name) continue;
+    const existing = map.get(name);
+    if (!existing) {
+      const nextItem = { name, subcategories: [...(item.subcategories || [])] };
+      taxonomy.value.push(nextItem);
+      map.set(name, nextItem);
+    } else {
+      for (const sub of item.subcategories || []) {
+        if (sub && !existing.subcategories.includes(sub)) existing.subcategories.push(sub);
+      }
+    }
   }
-  // 合并策略：按 dimension 聚合到 abilityLevels；同 dimension 已存在则把 name 加到 sublevels（去重）
-  const dimMap = new Map<string, AbilityLevel>();
-  for (const lv of abilityLevels.value) {
-    if (lv.name) dimMap.set(lv.name, lv);
-  }
-  for (const it of picked) {
-    const dim = (it.dimension || '其它素养').trim();
-    const subName = (it.name || '').trim();
-    if (!subName) continue;
-    let target = dimMap.get(dim);
-    if (!target) {
-      target = {
-        name: dim,
-        weight: 0.25,
-        description: it.description || '',
-        sublevels: [],
+}
+
+function mergeAbility(items: AbilityLevel[]) {
+  const map = new Map(abilityLevels.value.map((a) => [a.name, a]));
+  for (const item of items) {
+    const name = String(item.name || '').trim();
+    if (!name) continue;
+    const existing = map.get(name);
+    if (!existing) {
+      const nextItem = {
+        name,
+        weight: Number(item.weight ?? 0.25),
+        description: item.description || '',
+        sublevels: [...(item.sublevels || [])],
       };
-      abilityLevels.value.push(target);
-      dimMap.set(dim, target);
-    }
-    const subs = target.sublevels || (target.sublevels = []);
-    if (!subs.includes(subName)) subs.push(subName);
-    if (!target.description && it.description) {
-      target.description = it.description;
+      abilityLevels.value.push(nextItem);
+      map.set(name, nextItem);
+    } else {
+      if (!existing.description && item.description) existing.description = item.description;
+      const subs = existing.sublevels || (existing.sublevels = []);
+      for (const sub of item.sublevels || []) {
+        if (sub && !subs.includes(sub)) subs.push(sub);
+      }
     }
   }
-  showTransientInfo(`已合并 ${picked.length} 条联网素养建议`);
+}
+
+function mergeQuestionTypes(items: QuestionType[]) {
+  const map = new Map(questionTypes.value.map((q) => [q.name, q]));
+  for (const item of items) {
+    const name = String(item.name || '').trim();
+    if (!name) continue;
+    if (!map.has(name)) questionTypes.value.push({ name, weight: Number(item.weight ?? 0.1) });
+  }
+}
+
+function applySuggestions(mode: 'merge' | 'replace') {
+  if (suggestTarget.value === 'taxonomy') {
+    const items = normalizeTaxonomy(suggestItems.value);
+    if (mode === 'replace') taxonomy.value = items;
+    else mergeTaxonomy(items);
+  } else if (suggestTarget.value === 'ability_levels') {
+    const items = normalizeAbility(suggestItems.value);
+    if (mode === 'replace') abilityLevels.value = items;
+    else mergeAbility(items);
+  } else {
+    const items = normalizeQuestionTypes(suggestItems.value);
+    if (mode === 'replace') questionTypes.value = items;
+    else mergeQuestionTypes(items);
+  }
+  showTransientInfo(mode === 'replace' ? '已替换为联网建议' : '已合并联网建议');
   closeSuggest();
 }
-function removeQT(idx: number) {
-  questionTypes.value.splice(idx, 1);
-}
-function addQT() {
-  questionTypes.value.push({ name: '新题型', weight: 0.1 });
-}
-function removeSublevel(level: AbilityLevel, idx: number) {
-  level.sublevels = (level.sublevels || []).filter((_, i) => i !== idx);
+
+function validateBeforeSave(): boolean {
+  if (!grade.value.trim() || !subject.value.trim()) {
+    error.value = '请先填写学段和学科';
+    step.value = 1;
+    return false;
+  }
+  ensureCustomQuestionTypes();
+  return true;
 }
 
-const presetColors = ['bg-rose-300', 'bg-amber-300', 'bg-emerald-300', 'bg-sky-300', 'bg-purple-300', 'bg-pink-300', 'bg-orange-300'];
-
-const qtBars = computed(() => {
-  const total = sumQuestionTypes.value || 1;
-  return questionTypes.value.map((q, i) => ({
-    name: q.name,
-    pct: ((Number(q.weight) || 0) / total) * 100,
-    color: presetColors[i % presetColors.length],
-  }));
-});
+async function postConfig() {
+  const cfg = buildCurrentConfig();
+  await api.post(`/tasks/${props.id}/config`, {
+    preset: sourceType.value === 'official_preset' ? selectedPreset.value : null,
+    source_type: sourceType.value,
+    source_id: sourceId.value,
+    name: `${grade.value.trim()}${subject.value.trim()}`,
+    overrides: cfg,
+  });
+}
 
 async function saveAndRun() {
-  if (!selectedPreset.value) {
-    error.value = '请先在第 1 步选择学科';
-    step.value = 1;
-    return;
-  }
+  if (!validateBeforeSave()) return;
   submitting.value = true;
   error.value = '';
   try {
-    await api.post(`/tasks/${props.id}/config`, {
-      preset: selectedPreset.value,
-      overrides: {
-        taxonomy: taxonomy.value,
-        ability_levels: abilityLevels.value,
-        question_types: questionTypes.value,
-        difficulty_distribution: difficulty.value,
-        enabled_stages: [...enabledStages.value],
-      },
-    });
-    if (!readonly.value) {
-      await api.post(`/tasks/${props.id}/run`);
-    }
+    await postConfig();
+    await loadUserLibrary();
+    if (!readonly.value) await api.post(`/tasks/${props.id}/run`);
     router.replace(`/teacher/tasks/${props.id}`);
   } catch (err: any) {
     const code = err?.response?.data?.error;
-    if (code === 'task_already_running') {
-      error.value = '任务已在运行中';
-    } else if (code === 'user_has_running_task') {
-      error.value = '你已有任务在跑，等它结束后再启动新任务';
-    } else if (code === 'missing_llm_key') {
-      error.value = 'LLM Key 未配置，请联系管理员';
-    } else {
-      error.value = err?.response?.data?.message || err?.message || '提交失败';
-    }
+    if (code === 'task_already_running') error.value = '任务已在运行中';
+    else if (code === 'user_has_running_task') error.value = '你已有任务在跑，等它结束后再启动新任务';
+    else if (code === 'missing_llm_key') error.value = 'LLM Key 未配置，请联系管理员';
+    else error.value = err?.response?.data?.message || err?.message || '提交失败';
   } finally {
     submitting.value = false;
   }
 }
 
 async function saveOnly() {
-  if (!selectedPreset.value) {
-    error.value = '请先在第 1 步选择学科';
-    step.value = 1;
-    return;
-  }
+  if (!validateBeforeSave()) return;
   submitting.value = true;
   error.value = '';
   try {
-    await api.post(`/tasks/${props.id}/config`, {
-      preset: selectedPreset.value,
-      overrides: {
-        taxonomy: taxonomy.value,
-        ability_levels: abilityLevels.value,
-        question_types: questionTypes.value,
-        difficulty_distribution: difficulty.value,
-        enabled_stages: [...enabledStages.value],
-      },
-    });
+    await postConfig();
+    await loadUserLibrary();
     showTransientInfo('配置已保存到任务目录', 2500);
   } catch (err: any) {
     error.value = err?.response?.data?.error || err?.response?.data?.message || err?.message || '保存失败';
@@ -590,8 +687,70 @@ async function saveOnly() {
   }
 }
 
+async function saveAsTemplate() {
+  if (!validateBeforeSave()) return;
+  const name = templateName.value.trim();
+  if (!name) {
+    error.value = '请填写模板名称';
+    return;
+  }
+  submitting.value = true;
+  error.value = '';
+  try {
+    await api.post('/user-config/templates', {
+      name,
+      config: buildCurrentConfig(),
+    });
+    templateName.value = '';
+    saveTemplateOpen.value = false;
+    await loadUserLibrary();
+    showTransientInfo('已保存为我的模板');
+  } catch (err: any) {
+    error.value = err?.response?.data?.error || err?.message || '保存模板失败';
+  } finally {
+    submitting.value = false;
+  }
+}
+
+async function deleteTemplate(id: string) {
+  if (readonly.value) return;
+  try {
+    await api.delete(`/user-config/templates/${encodeURIComponent(id)}`);
+    await loadUserLibrary();
+    showTransientInfo('模板已删除');
+  } catch (err: any) {
+    error.value = err?.response?.data?.error || err?.message || '删除模板失败';
+  }
+}
+
+function openSaveTemplate() {
+  templateName.value = `${grade.value || '自定义'}${subject.value || '配置'}`;
+  saveTemplateOpen.value = true;
+}
+
+function targetLabel(target: SuggestTarget): string {
+  if (target === 'taxonomy') return '知识体系';
+  if (target === 'ability_levels') return '核心素养';
+  return '题型';
+}
+
+function itemTitle(item: unknown): string {
+  if (!item || typeof item !== 'object') return '';
+  return String((item as { name?: unknown }).name || '');
+}
+
+function itemDetail(item: unknown): string {
+  if (!item || typeof item !== 'object') return '';
+  const obj = item as Record<string, unknown>;
+  if (Array.isArray(obj.subcategories)) return obj.subcategories.join('、');
+  if (Array.isArray(obj.sublevels)) return obj.sublevels.join('、');
+  if (obj.description) return String(obj.description);
+  if (obj.weight !== undefined) return `权重 ${Number(obj.weight).toFixed(2)}`;
+  return '';
+}
+
 onMounted(async () => {
-  await loadPresets();
+  await Promise.all([loadPresets(), loadUserLibrary()]);
   await loadExistingConfig();
 });
 
@@ -607,352 +766,366 @@ onUnmounted(() => {
     </div>
 
     <div class="bg-white border border-slate-200 rounded-2xl p-6">
-      <div class="flex items-center justify-between mb-5">
+      <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <div class="flex items-center gap-3 flex-wrap">
           <template v-for="i in totalSteps" :key="i">
             <button
               type="button"
               :class="[
                 'w-8 h-8 rounded-full text-sm font-medium grid place-items-center transition',
-                i === step
-                  ? 'bg-slate-900 text-white'
-                  : i < step
-                    ? 'bg-emerald-500 text-white'
-                    : 'bg-slate-100 text-slate-500',
+                i === step ? 'bg-slate-900 text-white' : i < step ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500',
               ]"
               @click="step = i"
             >
               {{ i }}
             </button>
-            <span
-              v-if="i < totalSteps"
-              class="h-px w-6"
-              :class="i < step ? 'bg-emerald-500' : 'bg-slate-200'"
-            />
+            <span v-if="i < totalSteps" class="h-px w-6" :class="i < step ? 'bg-emerald-500' : 'bg-slate-200'" />
           </template>
         </div>
-        <button
-          v-if="step < totalSteps && !readonly && step > 1"
-          class="text-xs text-slate-500 hover:text-slate-900 underline"
-          @click="skip"
-        >
-          跳过本步用 preset 默认 →
-        </button>
       </div>
 
       <p v-if="error" class="text-sm text-rose-600 mb-3">{{ error }}</p>
 
-      <!-- Step 1: Subject -->
-      <section v-if="step === 1">
-        <h2 class="text-lg font-semibold text-slate-900 mb-1">第 1 步 · 选择学科</h2>
-        <p class="text-sm text-slate-500 mb-4">
-          学科决定了知识体系与默认认知层级，是必选项。后续 4 步将以学科预设为起点。
-        </p>
-
-        <div v-if="presetsLoading" class="text-slate-500 py-4">加载中...</div>
-        <div v-else-if="!presets.length" class="text-slate-500">
-          暂无预设，请先去 <router-link to="/admin" class="text-slate-900 underline">管理员看板</router-link> 创建预设。
+      <section v-if="step === 1" class="space-y-6">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-900">第 1 步 · 选择或创建配置</h2>
         </div>
+
+        <div v-if="presetsLoading" class="text-sm text-slate-500">正在加载官方预设...</div>
         <template v-else>
-          <!-- 分组 Tab -->
-          <div class="flex gap-1 mb-5 border-b border-slate-200">
-            <button
-              v-for="tab in [
-                { id: 'senior', label: '高中', count: seniorPresets.length },
-                { id: 'junior', label: '初中', count: juniorPresets.length },
-                { id: 'custom', label: '自定义', count: otherPresets.length },
-              ]"
-              :key="tab.id"
-              type="button"
-              :class="[
-                'px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors',
-                subjectTab === tab.id
-                  ? 'border-slate-900 text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700',
-              ]"
-              @click="subjectTab = tab.id as typeof subjectTab"
-            >
-              {{ tab.label }}
-              <span
-                v-if="tab.count"
-                :class="[
-                  'ml-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded-full font-semibold',
-                  subjectTab === tab.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500',
-                ]"
-              >{{ tab.count }}</span>
-            </button>
-          </div>
-
-          <!-- 高中 -->
-          <div v-show="subjectTab === 'senior'" class="grid grid-cols-1 gap-3">
-            <button
-              v-for="p in seniorPresets"
-              :key="p"
-              type="button"
-              :class="[
-                'border rounded-xl p-4 text-left transition group',
-                selectedPreset === p
-                  ? 'border-slate-900 bg-slate-50 shadow-sm'
-                  : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50/60',
-              ]"
-              :disabled="readonly || presetLoading"
-              @click="applyPreset(p)"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <span class="font-semibold text-slate-900 text-sm leading-snug">{{ presetLabel(p) }}</span>
-                <span
-                  v-if="selectedPreset === p"
-                  class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-emerald-500 text-white text-[11px] grid place-items-center"
-                >✓</span>
-              </div>
-              <p class="mt-1.5 text-[12px] leading-relaxed text-slate-500 line-clamp-3">
-                {{ presetDesc(p) }}
-              </p>
-            </button>
-          </div>
-
-          <!-- 初中 -->
-          <div v-show="subjectTab === 'junior'" class="grid grid-cols-1 gap-3">
-            <button
-              v-for="p in juniorPresets"
-              :key="p"
-              type="button"
-              :class="[
-                'border rounded-xl p-4 text-left transition group',
-                selectedPreset === p
-                  ? 'border-slate-900 bg-slate-50 shadow-sm'
-                  : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50/60',
-              ]"
-              :disabled="readonly || presetLoading"
-              @click="applyPreset(p)"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <span class="font-semibold text-slate-900 text-sm leading-snug">{{ presetLabel(p) }}</span>
-                <span
-                  v-if="selectedPreset === p"
-                  class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-emerald-500 text-white text-[11px] grid place-items-center"
-                >✓</span>
-              </div>
-              <p class="mt-1.5 text-[12px] leading-relaxed text-slate-500 line-clamp-3">
-                {{ presetDesc(p) }}
-              </p>
-            </button>
-          </div>
-
-          <!-- 自定义 -->
-          <div v-show="subjectTab === 'custom'" class="space-y-4">
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600 leading-relaxed">
-              <p class="font-medium text-slate-800 mb-1">使用自定义预设</p>
-              <p>在下方输入预设 ID（即 <code class="bg-white border border-slate-200 rounded px-1 text-xs">presets/</code> 目录下的 YAML 文件名，不含后缀），系统会自动加载对应的知识体系、题型与核心素养配置。</p>
-              <p class="mt-1.5 text-slate-500">例如：管理员通过 <code class="bg-white border border-slate-200 rounded px-1 text-xs">POST /admin/config/presets/:name</code> 新建的学科，或手动放入 <code class="bg-white border border-slate-200 rounded px-1 text-xs">presets/</code> 目录的文件，都可在此直接使用。</p>
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-slate-900">官方高中预设</h3>
+              <span class="text-xs text-slate-400">{{ seniorPresets.length }} 个</span>
             </div>
-
-            <!-- 其他已有预设（非 junior_ / senior_ 的）-->
-            <div v-if="otherPresets.length" class="grid grid-cols-1 gap-3">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-3 justify-items-stretch">
               <button
-                v-for="p in otherPresets"
+                v-for="p in seniorPresets"
                 :key="p"
                 type="button"
                 :class="[
-                  'border rounded-xl p-4 text-left transition',
-                  selectedPreset === p
+                  'dfedu-config-preset-btn box-border w-full min-w-0 flex items-center justify-center border rounded-lg px-2 py-2 text-center transition',
+                  selectedPreset === p && sourceType === 'official_preset'
                     ? 'border-slate-900 bg-slate-50 shadow-sm'
                     : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50/60',
                 ]"
                 :disabled="readonly || presetLoading"
                 @click="applyPreset(p)"
               >
-                <div class="flex items-start justify-between gap-2">
-                  <span class="font-semibold text-slate-900 text-sm">{{ presetLabel(p) }}</span>
+                <div class="flex w-full flex-row items-center justify-center gap-1.5 min-w-0">
                   <span
-                    v-if="selectedPreset === p"
-                    class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-emerald-500 text-white text-[11px] grid place-items-center"
-                  >✓</span>
+                    :class="[
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-bold leading-none',
+                      selectedPreset === p && sourceType === 'official_preset'
+                        ? 'bg-slate-300/80 text-slate-900'
+                        : 'bg-slate-100 text-slate-600',
+                    ]"
+                    aria-hidden="true"
+                  >{{ presetSubjectBadgeChar(p) }}</span>
+                  <span
+                    class="font-semibold text-slate-900 text-xs leading-snug text-center min-w-0 break-words"
+                    >{{ presetLabel(p) }}</span>
                 </div>
-                <p class="mt-1 text-[12px] text-slate-500">{{ presetDesc(p) || '自定义预设' }}</p>
               </button>
             </div>
+          </div>
 
-            <!-- 手动输入 -->
-            <div class="flex items-center gap-2">
-              <input
-                v-model="customPresetId"
-                type="text"
-                class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-slate-900"
-                placeholder="输入预设 ID，如 my_subject"
-                :disabled="readonly || presetLoading"
-                @keydown.enter="applyCustomPreset"
-              />
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-slate-900">官方初中预设</h3>
+              <span class="text-xs text-slate-400">{{ juniorPresets.length }} 个</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-3 justify-items-stretch">
               <button
+                v-for="p in juniorPresets"
+                :key="p"
                 type="button"
-                class="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap"
-                :disabled="!customPresetId.trim() || readonly || presetLoading"
-                @click="applyCustomPreset"
+                :class="[
+                  'dfedu-config-preset-btn box-border w-full min-w-0 flex items-center justify-center border rounded-lg px-2 py-2 text-center transition',
+                  selectedPreset === p && sourceType === 'official_preset'
+                    ? 'border-slate-900 bg-slate-50 shadow-sm'
+                    : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50/60',
+                ]"
+                :disabled="readonly || presetLoading"
+                @click="applyPreset(p)"
               >
-                加载
+                <div class="flex w-full flex-row items-center justify-center gap-1.5 min-w-0">
+                  <span
+                    :class="[
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-bold leading-none',
+                      selectedPreset === p && sourceType === 'official_preset'
+                        ? 'bg-slate-300/80 text-slate-900'
+                        : 'bg-slate-100 text-slate-600',
+                    ]"
+                    aria-hidden="true"
+                  >{{ presetSubjectBadgeChar(p) }}</span>
+                  <span
+                    class="font-semibold text-slate-900 text-xs leading-snug text-center min-w-0 break-words"
+                    >{{ presetLabel(p) }}</span>
+                </div>
               </button>
             </div>
-            <p v-if="selectedPreset && !selectedPreset.startsWith('senior_') && !selectedPreset.startsWith('junior_')" class="text-xs text-emerald-600">
-              ✓ 已加载自定义预设：{{ selectedPreset }}
-            </p>
           </div>
         </template>
+
+        <div class="space-y-4">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-900">我的配置</h3>
+              <p class="text-xs text-slate-500 mt-0.5">复用个人模板、最近使用，或从零开始创建自定义学段学科。</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            :class="[
+              'w-full rounded-xl border p-4 text-left transition disabled:opacity-60',
+              sourceType === 'custom'
+                ? 'border-slate-900 bg-slate-50 shadow-sm ring-1 ring-slate-900/10'
+                : 'border-dashed border-slate-300 bg-white hover:border-slate-500 hover:bg-slate-50',
+            ]"
+            :disabled="readonly"
+            @click="createCustom"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-slate-900">自定义配置</p>
+                <p class="text-xs text-slate-500 mt-1">
+                  不使用官方预设，知识体系、核心素养从空白开始，题型和难度使用默认初始值。
+                </p>
+              </div>
+              <span
+                :class="[
+                  'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                  sourceType === 'custom'
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-600',
+                ]"
+              >
+                {{ sourceType === 'custom' ? '当前选中' : '选择' }}
+              </span>
+            </div>
+          </button>
+
+          <div v-if="libraryLoading" class="text-sm text-slate-500">正在加载我的配置...</div>
+          <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="border border-slate-200 rounded-xl p-4">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-medium text-slate-800">我的模板</h4>
+                <span class="text-xs text-slate-400">{{ templates.length }} 个</span>
+              </div>
+              <div v-if="templates.length" class="space-y-2">
+                <div
+                  v-for="item in templates"
+                  :key="item.id"
+                  class="border border-slate-200 rounded-lg p-3 flex items-start justify-between gap-3"
+                >
+                  <button type="button" class="text-left min-w-0 flex-1" :disabled="readonly" @click="applySaved(item, 'user_template')">
+                    <span class="block text-sm font-medium text-slate-900 truncate">{{ item.name }}</span>
+                    <span class="block text-xs text-slate-500 mt-0.5 truncate">
+                      {{ item.config.grade || '未填学段' }} · {{ item.config.subject || '未填学科' }}
+                    </span>
+                  </button>
+                  <button
+                    v-if="!readonly"
+                    type="button"
+                    class="text-xs text-rose-600 hover:underline flex-shrink-0"
+                    @click="deleteTemplate(item.id)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+              <p v-else class="text-sm text-slate-500">暂无模板，可在编辑区底部保存当前配置。</p>
+            </div>
+
+            <div class="border border-slate-200 rounded-xl p-4">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-medium text-slate-800">最近使用</h4>
+                <span class="text-xs text-slate-400">最多 5 条</span>
+              </div>
+              <div v-if="recents.length" class="space-y-2">
+                <button
+                  v-for="item in recents"
+                  :key="item.id"
+                  type="button"
+                  class="w-full border border-slate-200 rounded-lg p-3 text-left hover:border-slate-400 disabled:opacity-60"
+                  :disabled="readonly"
+                  @click="applySaved(item, 'recent')"
+                >
+                  <span class="block text-sm font-medium text-slate-900 truncate">{{ item.name }}</span>
+                  <span class="block text-xs text-slate-500 mt-0.5 truncate">
+                    {{ item.config.grade || '未填学段' }} · {{ item.config.subject || '未填学科' }}
+                  </span>
+                </button>
+              </div>
+              <p v-else class="text-sm text-slate-500">暂无最近使用记录。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-6 mt-1 border-t border-slate-200">
+          <div
+            class="rounded-xl border border-slate-300 bg-white shadow-sm shadow-slate-900/5 ring-1 ring-slate-950/5 overflow-hidden"
+            role="region"
+            aria-label="当前编辑配置"
+          >
+            <div
+              class="flex items-center justify-between gap-3 flex-wrap px-4 py-3 bg-slate-100/95 border-b border-slate-200"
+            >
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-slate-900 tracking-tight">当前编辑配置</p>
+                <p class="text-xs text-slate-600 mt-0.5">{{ selectedSourceSummary }}</p>
+              </div>
+              <span
+                class="text-xs px-2.5 py-1 rounded-full bg-white border border-slate-200/90 text-slate-600 font-medium shadow-sm shrink-0"
+              >
+                {{ sourceType === 'official_preset' ? '官方预设副本' : sourceType === 'user_template' ? '我的模板副本' : sourceType === 'recent' ? '最近使用副本' : '自定义' }}
+              </span>
+            </div>
+            <div class="p-4 sm:p-5 bg-slate-50/40">
+              <div class="grid sm:grid-cols-2 gap-3">
+                <label class="block">
+                  <span class="text-xs text-slate-600 mb-1 block">学段</span>
+                  <input
+                    v-model="grade"
+                    type="text"
+                    placeholder="例如：高中、初中、大学本科"
+                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20"
+                    :disabled="readonly"
+                  />
+                </label>
+                <label class="block">
+                  <span class="text-xs text-slate-600 mb-1 block">学科</span>
+                  <input
+                    v-model="subject"
+                    type="text"
+                    placeholder="例如：生物学、网络与信息法学"
+                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20"
+                    :disabled="readonly"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <!-- Step 2: Ability levels -->
       <section v-else-if="step === 2">
         <div class="flex items-start justify-between gap-3 mb-1">
-          <h2 class="text-lg font-semibold text-slate-900">第 2 步 · 核心素养</h2>
+          <h2 class="text-lg font-semibold text-slate-900">第 2 步 · 学科知识体系</h2>
           <button
             v-if="!readonly"
             type="button"
             class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:border-slate-900 hover:bg-slate-50"
-            title="联网检索权威课程标准，为当前学科和教材生成结构化核心素养建议"
-            @click="openSuggest"
+            @click="openSuggest('taxonomy')"
           >
-            通过大模型联网搜索课标，给出建议
+            联网生成知识体系建议
           </button>
         </div>
         <p class="text-sm text-slate-500 mb-4">
-          决定题目的认知层级分布。权重为相对值，无需加总为 1（当前合计 {{ sumAbility.toFixed(2) }}）。
+          学科知识体系用于约束题目考察范围，避免超纲。<br />
+          除非您有特殊需求，否则不建议频繁修改学科知识体系。
         </p>
         <div class="space-y-3">
-          <div
-            v-for="(a, i) in abilityLevels"
-            :key="i"
-            class="border border-slate-200 rounded-xl p-3"
-          >
-            <div class="flex items-center gap-3 flex-wrap">
-              <input
-                v-model="a.name"
-                type="text"
-                class="flex-1 min-w-[8rem] px-2 py-1 border border-slate-300 rounded-lg text-sm font-medium"
-                :disabled="readonly"
-              />
-              <label class="flex items-center gap-2 text-xs text-slate-500">
-                权重
-                <input
-                  v-model.number="a.weight"
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  max="1"
-                  class="w-20 px-2 py-1 border border-slate-300 rounded-lg"
-                  :disabled="readonly"
-                />
-              </label>
-              <button
-                v-if="!readonly"
-                class="text-xs text-rose-600 hover:underline"
-                @click="removeAbility(i)"
-              >
-                删除
+          <div v-for="(t, i) in taxonomy" :key="i" class="border border-slate-200 rounded-xl p-3">
+            <div class="flex items-center gap-3">
+              <input v-model="t.name" type="text" class="flex-1 px-2 py-1 border border-slate-300 rounded-lg text-sm font-medium" :disabled="readonly" />
+              <button v-if="!readonly" class="text-xs text-rose-600 hover:underline" @click="removeTaxonomy(i)">删除</button>
+            </div>
+            <div class="mt-2 space-y-2">
+              <div class="grid grid-cols-3 gap-2 md:grid-cols-4">
+                <span v-for="(_, j) in t.subcategories" :key="j" class="flex min-w-0 items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-xs text-slate-700">
+                  <input v-model="t.subcategories[j]" type="text" class="flex-1 min-w-0 bg-transparent focus:outline-none" :disabled="readonly" />
+                  <button v-if="!readonly" type="button" class="shrink-0 text-slate-400 hover:text-rose-500" @click="removeSubcategory(t, j)">×</button>
+                </span>
+              </div>
+              <button v-if="!readonly" type="button" class="text-xs text-slate-600 hover:text-slate-900 border border-dashed border-slate-300 rounded-lg px-2 py-1" @click="addSubcategory(t)">
+                + 小类
               </button>
             </div>
-            <input
-              v-model="a.description"
-              type="text"
-              class="mt-2 w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-600"
-              placeholder="描述（可选）"
-              :disabled="readonly"
-            />
-            <div v-if="a.sublevels?.length" class="mt-2 flex flex-wrap gap-1.5">
-              <span
-                v-for="(s, j) in a.sublevels"
-                :key="j"
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-xs text-slate-700"
-              >
-                {{ s }}
-                <button
-                  v-if="!readonly"
-                  class="text-slate-400 hover:text-rose-500"
-                  @click="removeSublevel(a, j)"
-                >
-                  ×
-                </button>
-              </span>
-            </div>
           </div>
-          <div v-if="!abilityLevels.length" class="text-sm text-slate-500">尚无数据，请先在第 1 步选择学科以载入默认值</div>
+          <button v-if="!readonly" class="text-sm text-slate-600 hover:text-slate-900 border border-dashed border-slate-300 rounded-xl px-3 py-2 w-full" @click="addTaxonomy">+ 添加知识大类</button>
+          <p v-if="!taxonomy.length" class="text-sm text-slate-500">尚无知识体系，可手动添加或通过联网建议生成。</p>
         </div>
       </section>
 
-      <!-- Step 3: Question types -->
       <section v-else-if="step === 3">
-        <h2 class="text-lg font-semibold text-slate-900 mb-1">第 3 步 · 题型</h2>
-        <p class="text-sm text-slate-500 mb-4">
-          各题型的相对权重决定生成比例。当前合计 {{ sumQuestionTypes.toFixed(2) }}。
-        </p>
-        <div v-if="qtBars.length" class="flex h-3 w-full rounded-full overflow-hidden bg-slate-100 mb-4">
-          <div
-            v-for="(b, i) in qtBars"
-            :key="i"
-            :class="b.color"
-            :style="{ width: b.pct + '%' }"
-            :title="`${b.name} ${b.pct.toFixed(1)}%`"
-          />
-        </div>
-        <div class="space-y-2">
-          <div
-            v-for="(q, i) in questionTypes"
-            :key="i"
-            class="flex items-center gap-3 border border-slate-200 rounded-xl p-3"
-          >
-            <span class="inline-block w-3 h-3 rounded-full" :class="presetColors[i % presetColors.length]" />
-            <input
-              v-model="q.name"
-              type="text"
-              class="flex-1 min-w-[8rem] px-2 py-1 border border-slate-300 rounded-lg text-sm"
-              :disabled="readonly"
-            />
-            <input
-              v-model.number="q.weight"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              class="flex-1"
-              :disabled="readonly"
-            />
-            <span class="w-12 text-xs text-slate-500 text-right">{{ (Number(q.weight) || 0).toFixed(2) }}</span>
-            <button
-              v-if="!readonly"
-              class="text-xs text-rose-600 hover:underline"
-              @click="removeQT(i)"
-            >
-              删除
-            </button>
-          </div>
+        <div class="flex items-start justify-between gap-3 mb-1">
+          <h2 class="text-lg font-semibold text-slate-900">第 3 步 · 学科核心素养</h2>
           <button
             v-if="!readonly"
-            class="text-sm text-slate-600 hover:text-slate-900 border border-dashed border-slate-300 rounded-xl px-3 py-2 w-full"
-            @click="addQT"
+            type="button"
+            class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:border-slate-900 hover:bg-slate-50"
+            @click="openSuggest('ability_levels')"
           >
-            + 添加题型
+            联网生成核心素养建议
           </button>
+        </div>
+        <p class="text-sm text-slate-500 mb-4">
+          学科核心素养用于约束题目考察范围，避免超纲。<br />
+          除非您有特殊需求，否则不建议频繁修改学科核心素养。
+        </p>
+        <div class="space-y-3">
+          <div v-for="(a, i) in abilityLevels" :key="i" class="border border-slate-200 rounded-xl p-3">
+            <div class="flex items-center gap-3 flex-wrap">
+              <input v-model="a.name" type="text" class="flex-1 min-w-[8rem] px-2 py-1 border border-slate-300 rounded-lg text-sm font-medium" :disabled="readonly" />
+              <label class="flex items-center gap-2 text-xs text-slate-500">
+                权重
+                <input v-model.number="a.weight" type="number" step="0.05" min="0" max="1" class="w-20 px-2 py-1 border border-slate-300 rounded-lg" :disabled="readonly" />
+              </label>
+              <button v-if="!readonly" class="text-xs text-rose-600 hover:underline" @click="removeAbility(i)">删除</button>
+            </div>
+            <input v-model="a.description" type="text" class="mt-2 w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-600" placeholder="描述（可选）" :disabled="readonly" />
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <span v-for="(s, j) in a.sublevels" :key="j" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-xs text-slate-700">
+                {{ s }}
+                <button v-if="!readonly" class="text-slate-400 hover:text-rose-500" @click="removeSublevel(a, j)">×</button>
+              </span>
+              <button v-if="!readonly" class="text-xs text-slate-600 hover:text-slate-900 border border-dashed border-slate-300 rounded-full px-2" @click="addSublevel(a)">+ 子层级</button>
+            </div>
+          </div>
+          <button v-if="!readonly" class="text-sm text-slate-600 hover:text-slate-900 border border-dashed border-slate-300 rounded-xl px-3 py-2 w-full" @click="addAbility">+ 添加核心素养</button>
+          <p v-if="!abilityLevels.length" class="text-sm text-slate-500">尚无核心素养，可手动添加或通过联网建议生成。</p>
         </div>
       </section>
 
-      <!-- Step 4: Difficulty -->
       <section v-else-if="step === 4">
-        <h2 class="text-lg font-semibold text-slate-900 mb-1">第 4 步 · 难度分布</h2>
-        <p class="text-sm text-slate-500 mb-4">
-          易/中/难三档比例（合计 {{ sumDifficulty.toFixed(2) }}），将作为题目难度的参考分布写入配置。
-        </p>
+        <div class="flex items-start justify-between gap-3 mb-1">
+          <h2 class="text-lg font-semibold text-slate-900">第 4 步 · 题型</h2>
+          <button
+            v-if="!readonly"
+            type="button"
+            class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:border-slate-900 hover:bg-slate-50"
+            @click="openSuggest('question_types')"
+          >
+            联网生成题型建议
+          </button>
+        </div>
+        <p class="text-sm text-slate-500 mb-4">各题型的相对权重决定生成比例。当前合计 {{ sumQuestionTypes.toFixed(2) }}。</p>
+        <div v-if="qtBars.length" class="flex h-3 w-full rounded-full overflow-hidden bg-slate-100 mb-4">
+          <div v-for="(b, i) in qtBars" :key="i" :class="b.color" :style="{ width: b.pct + '%' }" :title="`${b.name} ${b.pct.toFixed(1)}%`" />
+        </div>
+        <div class="space-y-2">
+          <div v-for="(q, i) in questionTypes" :key="i" class="flex items-center gap-3 border border-slate-200 rounded-xl p-3">
+            <span class="inline-block w-3 h-3 rounded-full" :class="presetColors[i % presetColors.length]" />
+            <input v-model="q.name" type="text" class="flex-1 min-w-[8rem] px-2 py-1 border border-slate-300 rounded-lg text-sm" :disabled="readonly" />
+            <input v-model.number="q.weight" type="range" min="0" max="1" step="0.01" class="flex-1" :disabled="readonly" />
+            <span class="w-12 text-xs text-slate-500 text-right">{{ (Number(q.weight) || 0).toFixed(2) }}</span>
+            <button v-if="!readonly" class="text-xs text-rose-600 hover:underline" @click="removeQT(i)">删除</button>
+          </div>
+          <button v-if="!readonly" class="text-sm text-slate-600 hover:text-slate-900 border border-dashed border-slate-300 rounded-xl px-3 py-2 w-full" @click="addQT">+ 添加题型</button>
+          <p v-if="!questionTypes.length" class="text-sm text-slate-500">尚无题型，可手动添加或通过联网建议生成。</p>
+        </div>
+      </section>
+
+      <section v-else-if="step === 5">
+        <h2 class="text-lg font-semibold text-slate-900 mb-1">第 5 步 · 难度分布</h2>
+        <p class="text-sm text-slate-500 mb-4">易/中/难三档比例（合计 {{ sumDifficulty.toFixed(2) }}），将作为题目难度的参考分布写入配置。</p>
         <div class="space-y-4">
           <div v-for="key in (['easy', 'medium', 'hard'] as const)" :key="key" class="flex items-center gap-3">
-            <span class="w-12 text-sm text-slate-700">
-              {{ key === 'easy' ? '易' : key === 'medium' ? '中' : '难' }}
-            </span>
-            <input
-              v-model.number="difficulty[key]"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              class="flex-1"
-              :disabled="readonly"
-            />
+            <span class="w-12 text-sm text-slate-700">{{ key === 'easy' ? '易' : key === 'medium' ? '中' : '难' }}</span>
+            <input v-model.number="difficulty[key]" type="range" min="0" max="1" step="0.01" class="flex-1" :disabled="readonly" />
             <span class="w-14 text-sm text-slate-600 text-right">{{ (Number(difficulty[key]) || 0).toFixed(2) }}</span>
           </div>
           <div class="flex h-3 w-full rounded-full overflow-hidden bg-slate-100">
@@ -963,9 +1136,8 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- Step 5: Pipeline Steps -->
-      <section v-else-if="step === 5">
-        <h2 class="text-lg font-semibold text-slate-900 mb-1">第 5 步 · 流水线步骤</h2>
+      <section v-else-if="step === 6">
+        <h2 class="text-lg font-semibold text-slate-900 mb-1">第 6 步 · 流水线步骤</h2>
         <p class="text-sm text-slate-500 mb-4">
           选择需要执行的后处理步骤。未选中的步骤将被跳过，数据自动传递给下一个启用的步骤。
           <span class="text-amber-600">3.1+3.2 与 3.3+3.4 为绑定对，同开同关。</span>
@@ -977,35 +1149,24 @@ onUnmounted(() => {
             :class="[
               'border rounded-xl p-4 flex items-start gap-3 transition',
               readonly ? 'cursor-default' : 'cursor-pointer',
-              enabledStages.has(s.name)
-                ? 'border-slate-900 bg-slate-50'
-                : 'border-slate-200 hover:border-slate-400',
+              enabledStages.has(s.name) ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400',
             ]"
             @click="toggleStage(s)"
           >
             <div
               :class="[
                 'mt-0.5 w-5 h-5 rounded flex-shrink-0 border-2 flex items-center justify-center transition',
-                enabledStages.has(s.name)
-                  ? 'border-slate-900 bg-slate-900'
-                  : 'border-slate-300 bg-white',
+                enabledStages.has(s.name) ? 'border-slate-900 bg-slate-900' : 'border-slate-300 bg-white',
               ]"
             >
-              <svg
-                v-if="enabledStages.has(s.name)"
-                class="w-3 h-3 text-white"
-                viewBox="0 0 12 12"
-                fill="none"
-              >
+              <svg v-if="enabledStages.has(s.name)" class="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
                 <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium text-slate-900 leading-snug">{{ s.name }}</p>
               <p class="text-xs text-slate-500 mt-0.5 leading-snug">{{ s.desc }}</p>
-              <p v-if="s.pairName" class="text-xs text-amber-600 mt-1">
-                与「{{ s.pairName }}」联动
-              </p>
+              <p v-if="s.pairName" class="text-xs text-amber-600 mt-1">与「{{ s.pairName }}」联动</p>
             </div>
           </div>
         </div>
@@ -1014,7 +1175,43 @@ onUnmounted(() => {
         </p>
       </section>
 
-      <!-- 联网素养建议弹窗 -->
+      <div
+        v-if="showCustomTemplatePrompt"
+        class="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+      >
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-amber-900">当前选择的是自定义配置</p>
+            <p class="text-xs text-amber-700 mt-1">是否要保存这个配置，方便之后在「我的模板」中复用？</p>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap justify-end">
+            <template v-if="saveTemplateOpen">
+              <input
+                v-model="templateName"
+                type="text"
+                class="w-44 px-3 py-2 border border-amber-300 rounded-lg text-sm bg-white"
+                placeholder="模板名称"
+              />
+              <button
+                class="px-3 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
+                :disabled="submitting"
+                @click="saveAsTemplate"
+              >
+                确认保存
+              </button>
+            </template>
+            <button
+              v-else
+              class="px-3 py-2 text-sm border border-amber-300 bg-white rounded-lg text-amber-800 hover:border-amber-500 disabled:opacity-50"
+              :disabled="submitting"
+              @click="openSaveTemplate"
+            >
+              保存为我的模板
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div
         v-if="suggestOpen"
         class="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
@@ -1023,102 +1220,35 @@ onUnmounted(() => {
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
           <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
             <div>
-              <h3 class="text-base font-semibold text-slate-900">联网检索核心素养</h3>
-              <p class="text-xs text-slate-500 mt-0.5">
-                学科：{{ selectedPreset ? presetLabel(selectedPreset) : '(未选择)' }} ·
-                教材：{{ taskName || '(无)' }}
-              </p>
+              <h3 class="text-base font-semibold text-slate-900">联网生成{{ targetLabel(suggestTarget) }}</h3>
+              <p class="text-xs text-slate-500 mt-0.5">学段：{{ grade || '(未填写)' }} · 学科：{{ subject || '(未填写)' }} · 教材：{{ taskName || '(无)' }}</p>
             </div>
-            <button
-              class="text-slate-400 hover:text-slate-700 text-xl leading-none"
-              @click="closeSuggest"
-              aria-label="close"
-            >
-              ×
-            </button>
+            <button class="text-slate-400 hover:text-slate-700 text-xl leading-none" @click="closeSuggest" aria-label="close">×</button>
           </div>
           <div class="px-5 py-4 space-y-3 overflow-auto">
-            <div>
-              <label class="text-xs text-slate-600 mb-1 block">
-                教师个性化需求（可选，<span :class="suggestNeeds.length > NEEDS_MAX ? 'text-rose-600' : ''">{{ suggestNeeds.length }}/{{ NEEDS_MAX }}</span>）
-              </label>
-              <textarea
-                v-model="suggestNeeds"
-                :maxlength="NEEDS_MAX"
-                rows="3"
-                placeholder="例如：希望聚焦实验探究与跨学科应用，淡化纯记忆性内容"
-                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900"
-              />
-            </div>
+            <label class="block">
+              <span class="text-xs text-slate-600 mb-1 block">个性化需求（可选，{{ suggestNeeds.length }}/{{ NEEDS_MAX }}）</span>
+              <textarea v-model="suggestNeeds" :maxlength="NEEDS_MAX" rows="3" placeholder="例如：希望更贴近实验探究和跨学科应用" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900" />
+            </label>
             <div class="flex items-center gap-2">
-              <button
-                class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
-                :disabled="suggestLoading"
-                @click="fetchSuggest"
-              >
-                {{ suggestLoading ? '检索中...' : '开始检索' }}
+              <button class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50" :disabled="suggestLoading" @click="fetchSuggest">
+                {{ suggestLoading ? '生成中...' : '开始生成' }}
               </button>
-              <span v-if="suggestState.source === 'cache'" class="text-xs text-emerald-600">
-                来自本地缓存（24h 内同参数复用）
-              </span>
-              <span v-if="suggestState.source === 'live'" class="text-xs text-slate-500">
-                来自联网检索
-              </span>
+              <span v-if="suggestState.source === 'live'" class="text-xs text-slate-500">来自联网检索</span>
             </div>
             <p v-if="suggestError" class="text-sm text-rose-600">{{ suggestError }}</p>
             <div v-if="suggestItems.length" class="space-y-2">
-              <div class="flex items-center justify-between text-xs text-slate-500">
-                <span>共 {{ suggestItems.length }} 条建议（可勾选）</span>
-                <button
-                  class="hover:underline"
-                  @click="suggestItems.forEach((it) => (it._checked = !suggestItems.every((x) => x._checked)))"
-                >
-                  全选 / 全不选
-                </button>
-              </div>
-              <div
-                v-for="(it, i) in suggestItems"
-                :key="i"
-                class="border border-slate-200 rounded-xl p-3 hover:border-slate-400"
-              >
-                <label class="flex items-start gap-3 cursor-pointer">
-                  <input v-model="it._checked" type="checkbox" class="mt-1" />
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-baseline gap-2 flex-wrap">
-                      <span class="text-sm font-medium text-slate-900">{{ it.name }}</span>
-                      <span v-if="it.dimension" class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                        {{ it.dimension }}
-                      </span>
-                    </div>
-                    <p v-if="it.description" class="text-xs text-slate-600 mt-1">{{ it.description }}</p>
-                    <a
-                      v-if="it.source_url"
-                      :href="it.source_url"
-                      target="_blank"
-                      rel="noopener"
-                      class="text-xs text-slate-500 hover:text-slate-900 underline mt-1 inline-block break-all"
-                    >
-                      {{ it.source_url }}
-                    </a>
-                  </div>
-                </label>
+              <p class="text-xs text-slate-500">共 {{ suggestItems.length }} 条建议，应用前请确认。</p>
+              <div v-for="(it, i) in suggestItems" :key="i" class="border border-slate-200 rounded-xl p-3">
+                <p class="text-sm font-medium text-slate-900">{{ itemTitle(it) }}</p>
+                <p v-if="itemDetail(it)" class="text-xs text-slate-600 mt-1">{{ itemDetail(it) }}</p>
               </div>
             </div>
           </div>
           <div class="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
-            <button
-              class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-600 hover:border-slate-900"
-              @click="closeSuggest"
-            >
-              取消
-            </button>
-            <button
-              class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
-              :disabled="!suggestItems.some((it) => it._checked)"
-              @click="applySelectedSuggestions"
-            >
-              应用所选项
-            </button>
+            <button class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-600 hover:border-slate-900" @click="closeSuggest">取消</button>
+            <button class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:border-slate-900 disabled:opacity-50" :disabled="!suggestItems.length" @click="applySuggestions('merge')">合并到当前配置</button>
+            <button class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50" :disabled="!suggestItems.length" @click="applySuggestions('replace')">替换当前步骤</button>
           </div>
         </div>
       </div>
@@ -1131,11 +1261,11 @@ onUnmounted(() => {
         >
           ← 上一步
         </button>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap justify-end">
           <button
             v-if="!readonly && step === totalSteps"
             class="px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-600 hover:border-slate-900 disabled:opacity-50"
-            :disabled="submitting || !selectedPreset"
+            :disabled="submitting"
             @click="saveOnly"
           >
             仅保存配置
@@ -1151,16 +1281,12 @@ onUnmounted(() => {
           <button
             v-else-if="!readonly"
             class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
-            :disabled="submitting || !selectedPreset"
+            :disabled="submitting"
             @click="saveAndRun"
           >
             {{ submitting ? '提交中...' : '保存并开始生成' }}
           </button>
-          <button
-            v-else
-            class="px-4 py-2 text-sm bg-slate-300 text-white rounded-lg cursor-not-allowed"
-            disabled
-          >
+          <button v-else class="px-4 py-2 text-sm bg-slate-300 text-white rounded-lg cursor-not-allowed" disabled>
             任务已启动，无法再次开始
           </button>
         </div>
@@ -1181,43 +1307,20 @@ onUnmounted(() => {
 </template>
 
 <style>
-/*
- * Toast 动画：须 unscoped（Transition 挂的动态类名与 scoped 组合易不生效）。
- * style.css 在 prefers-reduced-motion:reduce 下对 * 使用 transition-duration:!important，
- * 故此处对 -enter/-leave-active 显式写 duration !important，reduce 分支仅保留淡入淡出。
- */
-@media (prefers-reduced-motion: no-preference) {
-  .dfedu-toast-enter-from {
-    opacity: 0;
-    transform: translate3d(0, 24px, 0) scale(0.92);
-  }
-  .dfedu-toast-leave-to {
-    opacity: 0;
-    transform: translate3d(0, 16px, 0) scale(0.96);
-  }
-  .dfedu-toast-enter-active {
-    transition-property: opacity, transform !important;
-    transition-duration: 0.45s !important;
-    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1) !important;
-  }
-  .dfedu-toast-leave-active {
-    transition-property: opacity, transform !important;
-    transition-duration: 0.28s !important;
-    transition-timing-function: ease-in !important;
-  }
+.dfedu-config-preset-btn {
+  box-sizing: border-box;
+  height: 3.75rem;
+  min-height: 3.75rem;
+  align-self: center;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dfedu-toast-enter-from,
-  .dfedu-toast-leave-to {
-    opacity: 0;
-    transform: none;
-  }
-  .dfedu-toast-enter-active,
-  .dfedu-toast-leave-active {
-    transition-property: opacity !important;
-    transition-duration: 0.22s !important;
-    transition-timing-function: ease !important;
-  }
+.dfedu-toast-enter-active,
+.dfedu-toast-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.dfedu-toast-enter-from,
+.dfedu-toast-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 </style>

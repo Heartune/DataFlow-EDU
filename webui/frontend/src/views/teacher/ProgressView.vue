@@ -83,6 +83,7 @@ const actionBusy = ref<'resume' | 'restart' | 'stop' | ''>('');
 let abortCtrl: AbortController | null = null;
 
 const stageProgress = ref<Record<string, StageProgress>>({});
+const selectedStageName = ref('');
 const logOffset = ref(0);
 let logTimer: ReturnType<typeof setInterval> | null = null;
 let pollingInflight = false;
@@ -168,6 +169,10 @@ function resetParserState() {
 }
 
 const overallStatus = computed(() => task.value?.status ?? 'created');
+const stageList = computed(() => progress.value?.stages ?? []);
+const selectedStage = computed(() => {
+  return stageList.value.find((s) => s.name === selectedStageName.value) ?? stageList.value[0] ?? null;
+});
 
 const taskErrorInfo = computed(() => parseTaskError(progress.value?.error));
 
@@ -246,10 +251,26 @@ function timelineConnectorClass(prev: StageInfo) {
   return 'bg-slate-200';
 }
 
+function timelineTextClass(status: StageInfo['status']) {
+  const m: Record<StageInfo['status'], string> = {
+    pending: 'text-slate-400',
+    running: 'text-amber-600',
+    succeeded: 'text-emerald-600',
+    failed: 'text-rose-600',
+    skipped: 'text-slate-500',
+    cancelled: 'text-amber-700',
+  };
+  return m[status];
+}
+
 /** 时间线节点标题：仅取「1.1」「2.1」等编号前缀 */
 function stageTimelineCode(name: string) {
   const m = name.match(/^(\d+\.\d+)/);
   return m ? m[1] : name.split(/\s/)[0] || name;
+}
+
+function selectStage(name: string) {
+  selectedStageName.value = name;
 }
 
 async function loadInitial() {
@@ -951,6 +972,26 @@ watch(
 );
 
 watch(
+  () => progress.value?.stages?.map((s) => `${s.name}:${s.status}`).join('|'),
+  () => {
+    const stages = stageList.value;
+    if (!stages.length) {
+      selectedStageName.value = '';
+      return;
+    }
+    if (stages.some((s) => s.name === selectedStageName.value)) return;
+    const preferred =
+      stages.find((s) => s.status === 'running') ??
+      stages.find((s) => s.name === progress.value?.current_stage) ??
+      stages.find((s) => s.status === 'failed' || s.status === 'cancelled') ??
+      stages.find((s) => s.status === 'succeeded') ??
+      stages[0];
+    selectedStageName.value = preferred.name;
+  },
+  { immediate: true },
+);
+
+watch(
   () => task.value?.status,
   () => {
     ensureLogPolling();
@@ -1291,92 +1332,145 @@ function barLabel(info: StageProgress | undefined, status: StageInfo['status']):
         <h2 class="text-sm font-semibold text-slate-700 mb-3">阶段进度</h2>
 
         <div
-          v-if="progress?.stages?.length"
-          class="mb-4 rounded-xl border border-slate-200 bg-white/70 px-3 py-4 shadow-sm"
+          v-if="stageList.length"
+          class="rounded-xl border border-slate-200 bg-white/70 p-4 shadow-sm"
           aria-label="阶段时间线"
         >
-          <p class="text-xs text-slate-500 mb-3">时间线</p>
-          <div class="overflow-x-auto pt-2.5 pb-2 -mx-1 px-1">
-            <div class="flex items-start min-w-max">
-              <template v-for="(s, idx) in progress.stages" :key="'tl-' + s.name">
-                <div
-                  v-if="idx > 0"
-                  class="h-0.5 flex-1 min-w-[20px] max-w-[48px] rounded-full mt-1.5 transition-colors"
-                  :class="timelineConnectorClass(progress.stages[idx - 1])"
-                />
-                <div class="flex flex-col items-center shrink-0 w-14 sm:w-16">
-                  <div
-                    class="w-3.5 h-3.5 rounded-full border-2 border-white shadow shrink-0 ring-2"
-                    :class="timelineDotClass(s.status)"
+          <div class="grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] gap-4">
+            <div class="space-y-0">
+              <button
+                v-for="(s, idx) in stageList"
+                :key="s.name"
+                type="button"
+                class="group flex w-full items-stretch text-left focus:outline-none"
+                :aria-pressed="selectedStage?.name === s.name"
+                @click="selectStage(s.name)"
+              >
+                <span class="flex w-8 shrink-0 flex-col items-center">
+                  <span
+                    v-if="idx > 0"
+                    class="h-4 w-px transition-colors"
+                    :class="timelineConnectorClass(stageList[idx - 1])"
                   />
                   <span
-                    class="text-xs text-center mt-2 font-semibold text-slate-800 tabular-nums"
-                    :title="s.name"
-                  >{{ stageTimelineCode(s.name) }}</span>
+                    class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-white shadow-sm ring-2 transition-transform group-hover:scale-105"
+                    :class="timelineDotClass(s.status)"
+                  >
+                    <span
+                      v-if="selectedStage?.name === s.name"
+                      class="h-1.5 w-1.5 rounded-full bg-white"
+                    />
+                  </span>
                   <span
-                    class="text-[10px] mt-1 font-medium"
-                    :class="{
-                      'text-slate-400': s.status === 'pending',
-                      'text-amber-600': s.status === 'running',
-                      'text-emerald-600': s.status === 'succeeded',
-                      'text-rose-600': s.status === 'failed',
-                      'text-slate-500': s.status === 'skipped',
-                      'text-amber-700': s.status === 'cancelled',
-                    }"
-                  >{{ timelineStatusLabel[s.status] }}</span>
+                    v-if="idx < stageList.length - 1"
+                    class="min-h-[48px] w-px flex-1 transition-colors"
+                    :class="timelineConnectorClass(s)"
+                  />
+                </span>
+                <span
+                  class="mb-2 flex min-w-0 flex-1 items-start justify-between gap-3 rounded-lg border px-3 py-2.5 transition-colors"
+                  :class="selectedStage?.name === s.name
+                    ? ['border-slate-900 bg-white shadow-sm', stageStatusClass[s.status]]
+                    : 'border-transparent hover:border-slate-200 hover:bg-white'"
+                >
+                  <span class="min-w-0">
+                    <span class="flex items-center gap-2">
+                      <span class="font-mono text-xs font-semibold text-slate-500 tabular-nums">
+                        {{ stageTimelineCode(s.name) }}
+                      </span>
+                      <span class="truncate text-sm font-medium text-slate-900">{{ s.name }}</span>
+                    </span>
+                    <span
+                      v-if="STAGE_DESCRIPTIONS[s.name]"
+                      class="mt-1 block text-xs leading-snug text-slate-500"
+                    >
+                      {{ STAGE_DESCRIPTIONS[s.name] }}
+                    </span>
+                  </span>
+                  <span
+                    class="shrink-0 text-xs font-medium"
+                    :class="timelineTextClass(s.status)"
+                  >
+                    {{ timelineStatusLabel[s.status] }}
+                  </span>
+                </span>
+              </button>
+            </div>
+
+            <div v-if="selectedStage" class="lg:border-l lg:border-slate-200 lg:pl-4">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-xs text-slate-400">选中阶段</p>
+                  <h3 class="mt-1 text-base font-semibold text-slate-900">
+                    {{ selectedStage.name }}
+                  </h3>
+                </div>
+                <span
+                  :class="['inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium', stageStatusClass[selectedStage.status]]"
+                >
+                  <span
+                    v-if="selectedStage.status === 'running'"
+                    class="inline-block h-3 w-3 rounded-full border-2 border-amber-300 border-t-amber-600 animate-spin"
+                    style="animation-duration: 1.1s"
+                    aria-label="running"
+                  />
+                  <span v-else class="leading-none">{{ stageDot[selectedStage.status] }}</span>
+                  {{ timelineStatusLabel[selectedStage.status] }}
+                </span>
+              </div>
+
+              <p
+                v-if="STAGE_DESCRIPTIONS[selectedStage.name]"
+                class="mt-3 text-sm leading-6 text-slate-600"
+              >
+                {{ STAGE_DESCRIPTIONS[selectedStage.name] }}
+              </p>
+
+              <div class="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-500">
+                <div class="rounded-lg bg-slate-50 px-3 py-2">
+                  <div class="text-slate-400">开始</div>
+                  <div class="mt-1 font-medium text-slate-700">{{ fmtTime(selectedStage.started_at) }}</div>
+                </div>
+                <div class="rounded-lg bg-slate-50 px-3 py-2">
+                  <div class="text-slate-400">结束</div>
+                  <div class="mt-1 font-medium text-slate-700">{{ fmtTime(selectedStage.finished_at) }}</div>
+                </div>
+              </div>
+
+              <template v-if="['running', 'succeeded', 'failed', 'cancelled'].includes(selectedStage.status)">
+                <div class="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    class="h-full transition-all duration-300"
+                    :class="barColorClass(stageProgress[selectedStage.name], selectedStage.status)"
+                    :style="{ width: barPercent(stageProgress[selectedStage.name], selectedStage.status) + '%' }"
+                  />
+                </div>
+                <div
+                  v-if="barLabel(stageProgress[selectedStage.name], selectedStage.status)"
+                  class="mt-1 text-xs text-slate-500"
+                >
+                  {{ barLabel(stageProgress[selectedStage.name], selectedStage.status) }}
                 </div>
               </template>
+
+              <div
+                v-if="selectedStage.error"
+                class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 break-words"
+              >
+                {{ selectedStage.error }}
+              </div>
+              <div
+                v-if="selectedStage.note"
+                class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+              >
+                {{ selectedStage.note }}
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div
-            v-for="s in progress?.stages || []"
-            :key="s.name"
-            :class="['border rounded-xl p-4', stageStatusClass[s.status]]"
-          >
-            <div class="flex items-center justify-between">
-              <span class="font-medium">{{ s.name }}</span>
-              <span
-                v-if="s.status === 'running'"
-                class="inline-block w-3.5 h-3.5 rounded-full border-2 border-amber-300 border-t-amber-600 animate-spin"
-                style="animation-duration: 1.1s"
-                aria-label="running"
-              />
-              <span v-else class="text-lg leading-none">{{ stageDot[s.status] }}</span>
-            </div>
-            <p v-if="STAGE_DESCRIPTIONS[s.name]" class="text-xs mt-0.5 opacity-60 font-normal leading-snug">
-              {{ STAGE_DESCRIPTIONS[s.name] }}
-            </p>
-            <div class="text-xs mt-2 opacity-80">
-              <div v-if="s.started_at">开始：{{ fmtTime(s.started_at) }}</div>
-              <div v-if="s.finished_at">结束：{{ fmtTime(s.finished_at) }}</div>
-              <div v-if="s.error" class="mt-1 break-words">{{ s.error }}</div>
-              <div v-if="s.note" class="mt-1">{{ s.note }}</div>
-            </div>
-            <template v-if="['running', 'succeeded', 'failed', 'cancelled'].includes(s.status)">
-              <div class="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  class="h-full transition-all duration-300"
-                  :class="barColorClass(stageProgress[s.name], s.status)"
-                  :style="{ width: barPercent(stageProgress[s.name], s.status) + '%' }"
-                />
-              </div>
-              <div
-                v-if="barLabel(stageProgress[s.name], s.status)"
-                class="text-[11px] mt-1 opacity-70"
-              >
-                {{ barLabel(stageProgress[s.name], s.status) }}
-              </div>
-            </template>
-          </div>
-          <div
-            v-if="!progress?.stages?.length"
-            class="text-sm text-slate-500 col-span-full"
-          >
-            尚未开始或读取中...
-          </div>
+        <div v-if="!stageList.length" class="text-sm text-slate-500">
+          尚未开始或读取中...
         </div>
       </div>
 
