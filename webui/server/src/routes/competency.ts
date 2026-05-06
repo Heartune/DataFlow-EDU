@@ -16,6 +16,8 @@ interface SuggestItem {
   source_url?: string;
 }
 
+type SuggestTarget = 'competencies' | 'taxonomy' | 'ability_levels' | 'question_types';
+
 const ROUTE_SUGGEST = '/api/competency/suggest';
 
 /** 持久化滑动窗口限流（存 DB，重启不丢失）。 */
@@ -52,6 +54,8 @@ setInterval(() => {
 interface SubprocessResult {
   ok: boolean;
   competencies?: SuggestItem[];
+  target?: SuggestTarget;
+  items?: unknown[];
   error?: string;
   message?: string;
   exitCode: number | null;
@@ -83,11 +87,11 @@ const COMPETENCY_PROVIDER_KEY_MAP: Record<string, string> = {
 
 function runSuggestProcess(
   projectRoot: string,
-  payload: { subject: string; book: string; needs: string; provider?: string },
+  payload: { subject: string; grade?: string; book: string; needs: string; provider?: string; target?: SuggestTarget },
   llmKey: string
 ): Promise<SubprocessResult> {
   return new Promise((resolve) => {
-    const pythonBin = process.env.PYTHON_BIN || 'python';
+    const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
     const dataflowLocal = path.join(projectRoot, 'DataFlow');
     const pythonPath = [dataflowLocal, projectRoot, process.env.PYTHONPATH || '']
       .filter(Boolean)
@@ -98,10 +102,14 @@ function runSuggestProcess(
       'dataflow_edu.competency_suggest',
       '--subject',
       payload.subject,
+      '--grade',
+      payload.grade || '',
       '--book',
       payload.book,
       '--needs',
       payload.needs,
+      '--target',
+      payload.target || 'competencies',
     ];
 
     const provider = (payload.provider ?? DEFAULT_COMPETENCY_PROVIDER).toLowerCase();
@@ -167,6 +175,22 @@ function runSuggestProcess(
       if (code === 0) {
         try {
           const parsed = JSON.parse(stdoutBuf.trim().split(/\r?\n/).filter(Boolean).pop() || '{}');
+          const target = (payload.target || 'competencies') as SuggestTarget;
+          const key = target === 'competencies' ? 'competencies' : target;
+          if (parsed && parsed.ok && Array.isArray(parsed[key])) {
+            const items = parsed[key] as unknown[];
+            resolve({
+              ok: true,
+              target,
+              competencies: target === 'competencies' ? (items as SuggestItem[]) : undefined,
+              items,
+              exitCode: code,
+              rawStdout: stdoutBuf,
+              rawStderr: stderrBuf,
+              timedOut,
+            });
+            return;
+          }
           if (parsed && parsed.ok && Array.isArray(parsed.competencies)) {
             resolve({
               ok: true,
@@ -235,7 +259,7 @@ export function competencyRoutes(projectRoot: string): Router {
     const subject = String(body.subject ?? '').trim();
     const book = String(body.book ?? '').trim();
     const needs = String(body.needs ?? '').trim();
-    const provider = String(body.provider ?? 'dashscope').toLowerCase().trim();
+    const provider = String(body.provider ?? DEFAULT_COMPETENCY_PROVIDER).toLowerCase().trim();
     if (!subject) {
       res.status(400).json({ error: 'missing_subject' });
       return;
@@ -295,6 +319,104 @@ export function competencyRoutes(projectRoot: string): Router {
       ok: false,
       error: result.error || 'subprocess_failed',
       message: result.message || '联网素养建议失败',
+    });
+  });
+
+  return router;
+}
+
+export function configSuggestRoutes(projectRoot: string): Router {
+  const router = Router();
+
+  router.post('/suggest', async (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const body = (req.body || {}) as {
+      grade?: unknown;
+      subject?: unknown;
+      book?: unknown;
+      needs?: unknown;
+      target?: unknown;
+      provider?: unknown;
+    };
+    const grade = String(body.grade ?? '').trim();
+    const subject = String(body.subject ?? '').trim();
+    const book = String(body.book ?? '未指定教材').trim() || '未指定教材';
+    const needs = String(body.needs ?? '').trim();
+    const targetRaw = String(body.target ?? '').trim();
+    const target = ['taxonomy', 'ability_levels', 'question_types'].includes(targetRaw)
+      ? (targetRaw as SuggestTarget)
+      : null;
+    const provider = String(body.provider ?? DEFAULT_COMPETENCY_PROVIDER).toLowerCase().trim();
+    if (!grade) {
+      res.status(400).json({ error: 'missing_grade' });
+      return;
+    }
+    if (!subject) {
+      res.status(400).json({ error: 'missing_subject' });
+      return;
+    }
+    if (!target) {
+      res.status(400).json({ error: 'invalid_target' });
+      return;
+    }
+    if (needs.length > NEEDS_MAX_CHARS) {
+      res.status(400).json({
+        error: 'needs_too_long',
+        message: `个性化需求最长 ${NEEDS_MAX_CHARS} 字，当前 ${needs.length} 字`,
+      });
+      return;
+    }
+
+    const providerEnvKey =
+      COMPETENCY_PROVIDER_KEY_MAP[provider] ??
+      COMPETENCY_PROVIDER_KEY_MAP[DEFAULT_COMPETENCY_PROVIDER] ??
+      'LLM_BLT_API_KEY';
+    const envLlmKey = (process.env[providerEnvKey] || '').trim();
+    const headerLlmKey = String(req.headers['x-llm-key'] || '').trim();
+    const llmKey = envLlmKey || headerLlmKey;
+    if (!llmKey) {
+      res.status(400).json({ error: 'missing_llm_key', message: '服务端未配置 LLM API Key，且请求缺少 X-LLM-Key 请求头' });
+      return;
+    }
+
+    const limit = checkRateLimit(req.user.id);
+    if (!limit.ok) {
+      res
+        .status(429)
+        .set('Retry-After', String(Math.ceil(limit.retryAfterMs / 1000)))
+        .json({
+          error: 'rate_limited',
+          message: `每分钟最多 ${RATE_LIMIT_PER_MIN} 次，请 ${Math.ceil(
+            limit.retryAfterMs / 1000
+          )}s 后重试`,
+        });
+      return;
+    }
+
+    const result = await runSuggestProcess(
+      projectRoot,
+      { grade, subject, book, needs, provider, target },
+      llmKey
+    );
+    if (result.ok) {
+      res.json({ ok: true, target, items: result.items || [] });
+      return;
+    }
+    const status =
+      result.error === 'timeout'
+        ? 504
+        : result.error === 'missing_api_key'
+          ? 400
+          : result.error === 'needs_too_long' || result.error === 'invalid_target' || result.error === 'invalid_input'
+            ? 400
+            : 502;
+    res.status(status).json({
+      ok: false,
+      error: result.error || 'subprocess_failed',
+      message: result.message || '联网配置建议失败',
     });
   });
 

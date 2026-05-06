@@ -14,9 +14,10 @@ import { pipelineRoutes } from './routes/pipeline.js';
 import { authRoutes } from './routes/auth.js';
 import { tasksRoutes, reconcileOrphanedRunningTasks, killAllChildren, broadcastShutdownSSE } from './routes/tasks.js';
 import { shareRoutes } from './routes/share.js';
-import { competencyRoutes } from './routes/competency.js';
+import { competencyRoutes, configSuggestRoutes } from './routes/competency.js';
 import { adminUserRoutes } from './routes/admin.js';
 import { foldersRoutes } from './routes/folders.js';
+import { userConfigRoutes } from './routes/userConfig.js';
 import { requireAuth, requireAdmin } from './middleware/auth.js';
 import { getDb, cleanupExpiredExports } from './db.js';
 
@@ -156,6 +157,7 @@ app.get('/api/healthz', (_, res) => {
 app.use('/api/auth', authRoutes());
 app.use('/api/tasks', requireAuth, tasksRoutes(projectRoot));
 app.use('/api/folders', requireAuth, foldersRoutes());
+app.use('/api/user-config', requireAuth, userConfigRoutes());
 // 只读分享：公开接口，无需登录
 app.use('/api/share', shareRoutes(projectRoot));
 
@@ -164,6 +166,7 @@ app.use('/api', requireAuth, presetReaderRoutes(projectRoot));
 
 // 联网素养建议：BYOK + 滑动窗口限流
 app.use('/api/competency', requireAuth, competencyRoutes(projectRoot));
+app.use('/api/config', requireAuth, configSuggestRoutes(projectRoot));
 
 // 管理员看板专用：写全局配置 / 读历史 stage 数据 / pipeline 控制
 app.use('/api/admin', requireAuth, requireAdmin, dataRoutes(projectRoot));

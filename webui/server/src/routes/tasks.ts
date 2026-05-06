@@ -20,6 +20,7 @@ import {
   type TaskRow,
 } from '../db.js';
 import { normalizeProgressPayload, normalizeStageDisplayName } from '../stageDisplayName.js';
+import { recordUserConfigRecent } from './userConfig.js';
 
 // 允许编辑/导出的 stage 白名单（防止越权访问任意路径）
 const EDITABLE_STAGES = new Set([
@@ -64,8 +65,12 @@ const DEFAULT_LLM_PROVIDER = (process.env.DATAFLOW_LLM_PROVIDER || 'blt').toLowe
 const DEFAULT_LLM_MODEL = process.env.DATAFLOW_LLM_MODEL || 'gemini-3-flash-preview-nothinking';
 const DEFAULT_LLM_BASE_URL = process.env.DATAFLOW_LLM_BASE_URL || 'https://api.bltcy.ai/v1';
 
-const ETA_MS_PER_10_PAGES_PER_STEP = 2 * 60 * 1000;
-const ETA_MANDATORY_STEP_COUNT = 3;
+const ETA_MS_PER_10_PAGES_PER_STEP = 60 * 1000;
+const ETA_MANDATORY_STAGES = [
+  '1.1 PDF转图片',
+  '1.2 文字识别',
+  '2.1 题目生成',
+];
 const ETA_OPTIONAL_STAGES = [
   '2.2 知识均衡检查与修正',
   '3.1 题意模糊检查',
@@ -78,21 +83,69 @@ const ETA_OPTIONAL_STAGES = [
   '3.8 选择题格式检查',
 ];
 const ETA_OPTIONAL_STAGE_SET = new Set(ETA_OPTIONAL_STAGES);
+const ETA_REMAINING_STAGE_STATUSES = new Set(['pending', 'running']);
+const ETA_STAGE_WEIGHTS: Record<string, number> = {
+  '1.1 PDF转图片': 0.4,
+  '1.2 文字识别': 1.2,
+  '2.1 题目生成': 1.8,
+  '2.2 知识均衡检查与修正': 1,
+  '3.1 题意模糊检查': 0.8,
+  '3.2 题意模糊修正': 1,
+  '3.3 考察领域检查': 0.8,
+  '3.4 考察领域修正': 1,
+  '3.5 去除重复题目': 0.5,
+  '3.6 题库增强': 1.2,
+  '3.7 多语言翻译': 1,
+  '3.8 选择题格式检查': 0.7,
+};
 
-function estimateStepCountForEta(taskDir: string): number {
+interface EtaStage {
+  name?: unknown;
+  status?: unknown;
+}
+
+function pageChunksForEta(currentPages: number | null): number {
+  const pageCount = currentPages && currentPages > 0 ? currentPages : 10;
+  return Math.max(1, Math.ceil(pageCount / 10));
+}
+
+function etaStageWeight(stageName: unknown): number {
+  if (typeof stageName !== 'string' || !stageName.trim()) return 1;
+  const normalized = normalizeStageDisplayName(stageName) ?? stageName;
+  return ETA_STAGE_WEIGHTS[normalized] ?? 1;
+}
+
+function readEtaStages(taskDir: string): EtaStage[] | null {
   const progressPath = path.join(taskDir, 'progress.json');
   try {
     if (fs.existsSync(progressPath)) {
       const progress = JSON.parse(fs.readFileSync(progressPath, 'utf-8')) as {
-        stages?: Array<{ status?: unknown }>;
+        stages?: EtaStage[];
       };
       if (Array.isArray(progress.stages) && progress.stages.length > 0) {
-        const active = progress.stages.filter((s) => s.status !== 'skipped').length;
-        if (active > 0) return active;
+        return progress.stages;
       }
     }
   } catch {
-    /* ignore and fall through */
+    /* ignore */
+  }
+  return null;
+}
+
+function sumEtaStageWeights(stages: EtaStage[], statuses?: Set<string>): number {
+  return stages.reduce((sum, stage) => {
+    const status = typeof stage.status === 'string' ? stage.status : '';
+    if (status === 'skipped') return sum;
+    if (statuses && !statuses.has(status)) return sum;
+    return sum + etaStageWeight(stage.name);
+  }, 0);
+}
+
+function estimateTotalStageWeightForEta(taskDir: string): number {
+  const progressStages = readEtaStages(taskDir);
+  if (progressStages) {
+    const activeWeight = sumEtaStageWeights(progressStages);
+    if (activeWeight > 0) return activeWeight;
   }
 
   const configPath = path.join(taskDir, 'config.yaml');
@@ -103,21 +156,50 @@ function estimateStepCountForEta(taskDir: string): number {
         const enabledOptional = new Set(
           parsed.enabled_stages.filter((name): name is string => typeof name === 'string' && ETA_OPTIONAL_STAGE_SET.has(name))
         );
-        return ETA_MANDATORY_STEP_COUNT + enabledOptional.size;
+        const configuredStages = [
+          ...ETA_MANDATORY_STAGES,
+          ...ETA_OPTIONAL_STAGES.filter((stage) => enabledOptional.has(stage)),
+        ].map((name) => ({ name, status: 'pending' }));
+        const configuredWeight = sumEtaStageWeights(configuredStages);
+        if (configuredWeight > 0) return configuredWeight;
       }
     }
   } catch {
     /* ignore and fall through */
   }
 
-  return ETA_MANDATORY_STEP_COUNT + ETA_OPTIONAL_STAGES.length;
+  return sumEtaStageWeights(
+    [...ETA_MANDATORY_STAGES, ...ETA_OPTIONAL_STAGES].map((name) => ({ name, status: 'pending' }))
+  );
 }
 
 function estimateDefaultTotalMsForEta(taskDir: string, currentPages: number | null): number {
-  const pageCount = currentPages && currentPages > 0 ? currentPages : 10;
-  const pageChunks = Math.max(1, Math.ceil(pageCount / 10));
-  const stepCount = Math.max(1, estimateStepCountForEta(taskDir));
-  return pageChunks * stepCount * ETA_MS_PER_10_PAGES_PER_STEP;
+  const totalWeight = Math.max(1, estimateTotalStageWeightForEta(taskDir));
+  return pageChunksForEta(currentPages) * totalWeight * ETA_MS_PER_10_PAGES_PER_STEP;
+}
+
+function estimateStageWeightedRemainingMsForEta(taskDir: string, currentPages: number | null, totalMs: number): number | null {
+  const progressStages = readEtaStages(taskDir);
+  if (!progressStages) return null;
+
+  const totalWeight = sumEtaStageWeights(progressStages);
+  if (totalWeight <= 0) return null;
+
+  const remainingWeight = sumEtaStageWeights(progressStages, ETA_REMAINING_STAGE_STATUSES);
+  if (remainingWeight <= 0) return 0;
+
+  if (totalMs > 0) return totalMs * (remainingWeight / totalWeight);
+  return pageChunksForEta(currentPages) * remainingWeight * ETA_MS_PER_10_PAGES_PER_STEP;
+}
+
+function trimEtaOutliers<T>(items: T[], valueOf: (item: T) => number): T[] {
+  if (items.length < 5) return items;
+
+  const sorted = [...items].sort((a, b) => valueOf(a) - valueOf(b));
+  const trimCount = Math.max(1, Math.floor(sorted.length * 0.1));
+  if (sorted.length <= trimCount * 2) return sorted;
+
+  return sorted.slice(trimCount, sorted.length - trimCount);
 }
 
 // 等待队列（进程内；重启后 queued 状态任务回退为 created）
@@ -381,7 +463,7 @@ function doSpawn(
   const provider = String(meta.provider ?? DEFAULT_LLM_PROVIDER).toLowerCase();
   const providerEnvKey = PROVIDER_KEY_MAP[provider] ?? PROVIDER_KEY_MAP[DEFAULT_LLM_PROVIDER] ?? 'LLM_BLT_API_KEY';
 
-  const pythonBin = process.env.PYTHON_BIN || 'python';
+  const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
   const dataflowLocal = path.join(projectRoot, 'DataFlow');
   const pythonPath = [dataflowLocal, projectRoot, process.env.PYTHONPATH || '']
     .filter(Boolean)
@@ -629,11 +711,35 @@ function loadPresetYaml(projectRoot: string, presetName: string): Record<string,
 }
 
 interface WizardOverrides {
+  subject?: unknown;
+  grade?: unknown;
+  source_type?: unknown;
+  source_id?: unknown;
   taxonomy?: unknown;
   ability_levels?: unknown;
   question_types?: unknown;
   difficulty_distribution?: unknown;
+  default_difficulty_distribution?: unknown;
   enabled_stages?: string[];
+}
+
+function normalizeDifficultyDistribution(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const d = raw as Record<string, unknown>;
+  const hasEnglish = d.easy !== undefined || d.medium !== undefined || d.hard !== undefined;
+  if (hasEnglish) {
+    return {
+      '易': Number(d.easy ?? d['易'] ?? 0.3),
+      '中': Number(d.medium ?? d['中'] ?? 0.5),
+      '难': Number(d.hard ?? d['难'] ?? 0.2),
+    };
+  }
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(d)) {
+    const n = Number(v);
+    if (Number.isFinite(n)) out[k] = n;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function buildTaskConfigYaml(
@@ -641,11 +747,18 @@ function buildTaskConfigYaml(
   overrides: WizardOverrides
 ): string {
   const merged: Record<string, unknown> = preset ? { ...preset } : {};
+  if (overrides.subject !== undefined) merged.subject = overrides.subject;
+  if (overrides.grade !== undefined) merged.grade = overrides.grade;
+  if (overrides.source_type !== undefined) merged.source_type = overrides.source_type;
+  if (overrides.source_id !== undefined) merged.source_id = overrides.source_id;
   if (overrides.taxonomy !== undefined) merged.taxonomy = overrides.taxonomy;
   if (overrides.ability_levels !== undefined) merged.ability_levels = overrides.ability_levels;
   if (overrides.question_types !== undefined) merged.question_types = overrides.question_types;
-  if (overrides.difficulty_distribution !== undefined) {
-    merged.difficulty_distribution = overrides.difficulty_distribution;
+  const diff =
+    normalizeDifficultyDistribution(overrides.default_difficulty_distribution) ??
+    normalizeDifficultyDistribution(overrides.difficulty_distribution);
+  if (diff !== undefined) {
+    merged.default_difficulty_distribution = diff;
   }
   if (overrides.enabled_stages !== undefined) {
     merged.enabled_stages = overrides.enabled_stages;
@@ -811,24 +924,47 @@ export function tasksRoutes(projectRoot: string): Router {
     }
 
     const now = Date.now();
-    db.prepare(
-      'INSERT INTO tasks (id, user_id, name, status, current_stage, created_at, updated_at, meta_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(
-      taskId,
-      req.user.id,
-      name,
-      'created',
-      null,
-      now,
-      now,
-      JSON.stringify({ pdf_size: req.file.size, original_name: req.file.originalname, provider })
-    );
+    try {
+      db
+        .prepare(
+          'INSERT INTO tasks (id, user_id, name, status, current_stage, created_at, updated_at, meta_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        )
+        .run(
+          taskId,
+          req.user.id,
+          name,
+          'created',
+          null,
+          now,
+          now,
+          JSON.stringify({ pdf_size: req.file.size, original_name: req.file.originalname, provider })
+        );
 
-    db.prepare(
-      'INSERT INTO upload_quota (user_id, day, count) VALUES (?, ?, 1) ON CONFLICT(user_id, day) DO UPDATE SET count = count + 1'
-    ).run(req.user.id, day);
+      db
+        .prepare(
+          'INSERT INTO upload_quota (user_id, day, count) VALUES (?, ?, 1) ON CONFLICT(user_id, day) DO UPDATE SET count = count + 1'
+        )
+        .run(req.user.id, day);
 
-    res.json({ task_id: taskId, name, status: 'created' });
+      res.json({ task_id: taskId, name, status: 'created' });
+    } catch (err: unknown) {
+      try {
+        fs.rmSync(taskDir, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+      const code =
+        err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';
+      console.error('[tasks] upload-pdf db write failed:', err);
+      if (code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+        res.status(401).json({
+          error: 'session_stale',
+          message: '用户数据不一致，请重新登录后再试',
+        });
+        return;
+      }
+      res.status(500).json({ error: 'upload_save_failed', message: '保存任务失败，请稍后重试' });
+    }
   });
 
   type SpawnGuardError =
@@ -1384,7 +1520,10 @@ export function tasksRoutes(projectRoot: string): Router {
     let method: 'history' | 'pdf_step_default' = 'pdf_step_default';
 
     if (history.length >= 2) {
-      const durations = history.map((h) => h.updated_at - h.created_at).filter((d) => d > 0);
+      const durations = trimEtaOutliers(
+        history.map((h) => h.updated_at - h.created_at).filter((d) => d > 0),
+        (d) => d
+      );
       if (durations.length >= 2) {
         const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
         if (currentPages !== null) {
@@ -1397,8 +1536,9 @@ export function tasksRoutes(projectRoot: string): Router {
                 : null;
             })
             .filter(Boolean) as Array<{ pages: number; duration: number }>;
-          if (withPages.length >= 2) {
-            const avgPages = withPages.reduce((a, b) => a + b.pages, 0) / withPages.length;
+          const trimmedWithPages = trimEtaOutliers(withPages.filter((h) => h.duration > 0), (h) => h.duration);
+          if (trimmedWithPages.length >= 2) {
+            const avgPages = trimmedWithPages.reduce((a, b) => a + b.pages, 0) / trimmedWithPages.length;
             if (avgPages > 0) {
               totalMs = avgDuration * (currentPages / avgPages);
             } else {
@@ -1414,7 +1554,8 @@ export function tasksRoutes(projectRoot: string): Router {
       }
     }
 
-    const remainingMs = Math.max(0, totalMs - elapsedMs);
+    const stageWeightedRemainingMs = estimateStageWeightedRemainingMsForEta(taskDir, currentPages, totalMs);
+    const remainingMs = Math.max(0, stageWeightedRemainingMs ?? (totalMs - elapsedMs));
     res.json({
       remaining_seconds: Math.round(remainingMs / 1000),
       elapsed_seconds: Math.round(elapsedMs / 1000),
@@ -1700,6 +1841,9 @@ export function tasksRoutes(projectRoot: string): Router {
     }
     const body = (req.body || {}) as {
       preset?: string;
+      source_type?: unknown;
+      source_id?: unknown;
+      name?: unknown;
       overrides?: WizardOverrides;
     };
     const presetName = String(body.preset || '').trim();
@@ -1707,8 +1851,11 @@ export function tasksRoutes(projectRoot: string): Router {
     if (presetName) {
       preset = loadPresetYaml(projectRoot, presetName);
       if (!preset) {
-        res.status(400).json({ error: 'invalid_preset' });
-        return;
+        const sourceType = String(body.source_type || body.overrides?.source_type || '').trim();
+        if (sourceType === 'official_preset') {
+          res.status(400).json({ error: 'invalid_preset' });
+          return;
+        }
       }
     }
     const overrides: WizardOverrides = body.overrides || {};
@@ -1718,6 +1865,16 @@ export function tasksRoutes(projectRoot: string): Router {
     const cfgPath = path.join(taskDir, 'config.yaml');
     try {
       fs.writeFileSync(cfgPath, yamlText, 'utf-8');
+      recordUserConfigRecent({
+        userId: req.user.id,
+        sourceType: body.source_type ?? overrides.source_type ?? (presetName ? 'official_preset' : 'custom'),
+        sourceId: body.source_id ?? overrides.source_id ?? presetName,
+        name: body.name ?? overrides.subject ?? task.name,
+        config: {
+          ...overrides,
+          preset: presetName || null,
+        },
+      });
     } catch (err) {
       console.error('[tasks] write task config failed:', err);
       res.status(500).json({ error: 'write_config_failed' });
@@ -2203,7 +2360,7 @@ export function tasksRoutes(projectRoot: string): Router {
       outputPath: string;
     }
   ): void {
-    const pythonBin = process.env.PYTHON_BIN || 'python';
+    const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
     const dataflowLocal = path.join(projectRoot, 'DataFlow');
     const pythonPath = [dataflowLocal, projectRoot, process.env.PYTHONPATH || '']
       .filter(Boolean)

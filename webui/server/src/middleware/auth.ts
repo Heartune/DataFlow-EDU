@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
+import { getDb } from '../db.js';
 
 export interface AuthUser {
   id: string;
@@ -46,7 +47,21 @@ export const requireAuth: RequestHandler = (req: Request, res: Response, next: N
   }
   try {
     const decoded = jwt.verify(m[1], getJwtSecret()) as AuthUser & { iat?: number; exp?: number };
-    req.user = { id: decoded.id, email: decoded.email, role: decoded.role };
+    const row = getDb()
+      .prepare('SELECT id, email, role FROM users WHERE id = ?')
+      .get(decoded.id) as { id: string; email: string; role: string } | undefined;
+    if (!row) {
+      res.status(401).json({
+        error: 'session_stale',
+        message: '会话对应的用户不存在（例如数据库曾重置）。请退出后重新登录。',
+      });
+      return;
+    }
+    req.user = {
+      id: row.id,
+      email: row.email,
+      role: row.role === 'admin' ? 'admin' : 'user',
+    };
     next();
   } catch {
     res.status(401).json({ error: 'invalid_token' });

@@ -15,7 +15,7 @@ import json
 import sys
 from typing import Optional
 
-from dataflow_edu.competency_suggest.core import SuggestError, suggest_competencies
+from dataflow_edu.competency_suggest.core import SuggestError, suggest_competencies, suggest_config_items
 
 
 def _emit_ok(payload: dict) -> int:
@@ -40,14 +40,28 @@ def _emit_err(code: str, message: Optional[str] = None) -> int:
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(prog="dataflow_edu.competency_suggest")
     parser.add_argument("--subject", required=True, help="学科名（与 preset 一致）")
+    parser.add_argument("--grade", default="", help="学段，如高中/初中")
     parser.add_argument("--book", required=True, help="教材名")
     parser.add_argument("--needs", default="", help="教师个性化需求自由文本，<=500 字")
+    parser.add_argument("--target", default="competencies", help="competencies/taxonomy/ability_levels/question_types")
     parser.add_argument("--model", default=None, help="覆盖 zgca 模型名（可选）")
     parser.add_argument("--max-tokens", type=int, default=2048)
     parser.add_argument("--temperature", type=float, default=0.3)
     args = parser.parse_args(argv)
 
     try:
+        if args.target in {"taxonomy", "ability_levels", "question_types"}:
+            field, items = suggest_config_items(
+                args.target,
+                args.grade,
+                args.subject,
+                args.book,
+                args.needs,
+                model=args.model,
+                max_tokens=args.max_tokens,
+                temperature=args.temperature,
+            )
+            return _emit_ok({"ok": True, "target": args.target, field: items})
         items = suggest_competencies(
             args.subject,
             args.book,

@@ -10,7 +10,7 @@ const DB_DIR = path.resolve(__dirname, '../data');
 const DB_PATH = path.join(DB_DIR, 'app.db');
 
 /** 每用户每日 LLM token 上限默认值（与 DB 列默认、注册 INSERT、配额校验回退一致） */
-export const DEFAULT_DAILY_LLM_QUOTA = 999999;
+export const DEFAULT_DAILY_LLM_QUOTA = 2999999;
 
 export interface UserRow {
   id: string;
@@ -69,6 +69,25 @@ export interface FolderRow {
   parent_id: string | null; // NULL = 根文件夹
   sort_order: number;
   created_at: number;
+}
+
+export interface UserConfigTemplateRow {
+  id: string;
+  user_id: string;
+  name: string;
+  config_json: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface UserConfigRecentRow {
+  id: string;
+  user_id: string;
+  source_type: string;
+  source_id: string | null;
+  name: string;
+  config_json: string;
+  used_at: number;
 }
 
 export interface TaskFolderRow {
@@ -240,6 +259,29 @@ function initSchema(database: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_task_folders_folder ON task_folders(folder_id);
     CREATE INDEX IF NOT EXISTS idx_task_folders_task ON task_folders(task_id);
+
+    CREATE TABLE IF NOT EXISTS user_config_templates (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      config_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_config_templates_user ON user_config_templates(user_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS user_config_recents (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT,
+      name TEXT NOT NULL,
+      config_json TEXT NOT NULL,
+      used_at INTEGER NOT NULL,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_config_recents_user ON user_config_recents(user_id, used_at DESC);
   `);
 
   // 迁移：为已存在的 users 表补 approved 列（SQLite 不支持 ADD COLUMN IF NOT EXISTS）
@@ -265,10 +307,10 @@ function initSchema(database: Database.Database) {
     // 列已存在，忽略
   }
 
-  // 将仍为旧默认 100000 的用户提升到新默认（列已存在的老库不会重跑 ALTER）
+  // 将仍为旧默认值的用户提升到新默认（列已存在的老库不会重跑 ALTER）
   try {
     database
-      .prepare('UPDATE users SET daily_llm_quota = ? WHERE daily_llm_quota = 100000')
+      .prepare('UPDATE users SET daily_llm_quota = ? WHERE daily_llm_quota IN (100000, 999999)')
       .run(DEFAULT_DAILY_LLM_QUOTA);
   } catch {
     // 忽略
