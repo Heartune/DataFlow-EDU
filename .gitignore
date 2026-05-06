@@ -91,6 +91,11 @@ desktop.ini
 logs/
 runner.log
 
+# ===== 部署字体占位：说明文档入库，真实字体文件本地提供 =====
+deploy/fonts/*
+!deploy/fonts/
+!deploy/fonts/README.md
+
 # ===== resources 大文件（md 保留）=====
 dataflow_edu/data/resources/**/*.pdf
 dataflow_edu/data/resources/**/img/

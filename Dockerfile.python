@@ -11,9 +11,9 @@
 # - 不打包 DataFlow/requirements.txt 的全套依赖（torch/transformers 几个 G），
 #   而是把 DataFlow/dataflow/__init__.py 改成最小导出版（只 get_logger + 注册中心），
 #   避免拉起整个算子库导致镜像膨胀。
-# - 字体：装 fonts-noto-cjk + fonts-wqy-microhei（Linux 下接近「微软雅黑」字形），
-#   docx 模板里写的是「微软雅黑」具体字体名，缺字时 LibreOffice 会按字体替换链
-#   回落到 noto / wqy，效果近似。
+# - 字体：装 fonts-noto-cjk + fonts-wqy-microhei，并支持把合法获取的 msyh*.ttf/ttc
+#   放到 deploy/fonts/ 一起打进镜像。fontconfig 会优先匹配真 Microsoft YaHei，
+#   缺字时再回落到 wqy/noto，避免 LibreOffice 转 PDF 时掉到 DejaVu。
 
 FROM python:3.13-slim AS runtime
 
@@ -46,6 +46,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ca-certificates curl gnupg xz-utils \
         build-essential \
         libreoffice-core libreoffice-writer \
+        fontconfig \
         fonts-noto-cjk fonts-wqy-microhei fonts-wqy-zenhei \
         poppler-utils \
         libpng16-16 libjpeg62-turbo zlib1g
@@ -81,6 +82,53 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 
 # ---- 拷整个仓库（.dockerignore 已排除 node_modules / data/users / utils_from_CNLaw-Bench 等）----
 COPY . /app
+
+# ---- 字体配置：deploy/fonts/ 可放合法获取的 msyh.ttc / msyhbd.ttc / msyhl.ttc 等。
+#      即便没有真实微软雅黑，也把「微软雅黑」/ "Microsoft YaHei" 映射到中文黑体兜底，
+#      防止 LibreOffice 转 PDF 时落到 DejaVu Sans。----
+COPY deploy/fonts/ /usr/local/share/fonts/dataflow-edu/
+RUN set -eux; \
+    cat > /etc/fonts/local.conf <<'EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <alias binding="strong">
+    <family>微软雅黑</family>
+    <prefer>
+      <family>Microsoft YaHei</family>
+      <family>Microsoft YaHei UI</family>
+      <family>WenQuanYi Micro Hei</family>
+      <family>Noto Sans CJK SC</family>
+      <family>Noto Sans CJK</family>
+    </prefer>
+  </alias>
+  <alias binding="strong">
+    <family>Microsoft YaHei</family>
+    <prefer>
+      <family>Microsoft YaHei</family>
+      <family>Microsoft YaHei UI</family>
+      <family>WenQuanYi Micro Hei</family>
+      <family>Noto Sans CJK SC</family>
+      <family>Noto Sans CJK</family>
+    </prefer>
+  </alias>
+  <alias binding="strong">
+    <family>Microsoft YaHei UI</family>
+    <prefer>
+      <family>Microsoft YaHei UI</family>
+      <family>Microsoft YaHei</family>
+      <family>WenQuanYi Micro Hei</family>
+      <family>Noto Sans CJK SC</family>
+      <family>Noto Sans CJK</family>
+    </prefer>
+  </alias>
+</fontconfig>
+EOF
+
+RUN set -eux; \
+    fc-cache -f; \
+    fc-match '微软雅黑'; \
+    fc-match 'Microsoft YaHei'
 
 # ---- patch DataFlow/dataflow/__init__.py：仅暴露 get_logger / 注册中心，
 #      不导入 .operators 与 .prompts，避免拉入 torch / transformers / etc. ----

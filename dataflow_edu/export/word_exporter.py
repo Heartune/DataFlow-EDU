@@ -90,7 +90,7 @@ _HEADINGS = {
 }
 
 
-DEFAULT_FONT = "微软雅黑"
+DEFAULT_FONT = os.environ.get("DATAFLOW_EDU_EXPORT_FONT", "").strip() or "微软雅黑"
 
 # 需要统一字体的内置样式（Title 是封面大标题；Heading 1~3 是章节；TOC 是目录）
 _STYLES_TO_UNIFY = (
@@ -146,6 +146,27 @@ def _make_label(typ: str, sub_local_idx: int) -> str:
     return str(sub_local_idx)
 
 
+def _set_rfonts(rPr: Any, font_name: str) -> None:
+    """Clear theme font refs and pin all OOXML font slots to font_name."""
+
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        rFonts = OxmlElement("w:rFonts")
+        rPr.append(rFonts)
+    for attr in ("w:asciiTheme", "w:hAnsiTheme", "w:eastAsiaTheme", "w:cstheme"):
+        if rFonts.get(qn(attr)) is not None:
+            del rFonts.attrib[qn(attr)]
+    for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        rFonts.set(qn(attr), font_name)
+
+
+def _set_run_font(run: Any, font_name: str) -> None:
+    """Set a concrete font on a run, including the eastAsia slot."""
+
+    run.font.name = font_name
+    _set_rfonts(run._r.get_or_add_rPr(), font_name)
+
+
 def _force_style_font(doc: DocxDocument, style_name: str, font_name: str) -> None:
     """把指定样式的中英文字体都改成 font_name。
 
@@ -162,22 +183,36 @@ def _force_style_font(doc: DocxDocument, style_name: str, font_name: str) -> Non
     except KeyError:
         return
     rPr = style.element.get_or_add_rPr()
-    rFonts = rPr.find(qn("w:rFonts"))
-    if rFonts is None:
-        rFonts = OxmlElement("w:rFonts")
-        rPr.append(rFonts)
-    for attr in ("w:asciiTheme", "w:hAnsiTheme", "w:eastAsiaTheme", "w:cstheme"):
-        if rFonts.get(qn(attr)) is not None:
-            del rFonts.attrib[qn(attr)]
-    for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
-        rFonts.set(qn(attr), font_name)
+    _set_rfonts(rPr, font_name)
     # python-docx 的 style.font.name 只会写 ascii / hAnsi，这里补一刀方便后续读取
     style.font.name = font_name
+
+
+def _force_default_font(doc: DocxDocument, font_name: str) -> None:
+    """Set w:docDefaults so LibreOffice does not fall back to theme fonts."""
+
+    styles_elem = doc.styles.element
+    doc_defaults = styles_elem.find(qn("w:docDefaults"))
+    if doc_defaults is None:
+        doc_defaults = OxmlElement("w:docDefaults")
+        styles_elem.insert(0, doc_defaults)
+
+    rpr_default = doc_defaults.find(qn("w:rPrDefault"))
+    if rpr_default is None:
+        rpr_default = OxmlElement("w:rPrDefault")
+        doc_defaults.append(rpr_default)
+
+    rPr = rpr_default.find(qn("w:rPr"))
+    if rPr is None:
+        rPr = OxmlElement("w:rPr")
+        rpr_default.append(rPr)
+    _set_rfonts(rPr, font_name)
 
 
 def _set_east_asia_font(doc: DocxDocument, font_name: str = DEFAULT_FONT) -> None:
     """把所有相关样式的中英文字体统一为 font_name（默认微软雅黑）。"""
 
+    _force_default_font(doc, font_name)
     for style_name in _STYLES_TO_UNIFY:
         _force_style_font(doc, style_name, font_name)
     doc.styles["Normal"].font.size = Pt(11)
@@ -528,7 +563,10 @@ def _refresh_toc_with_libreoffice(docx_path: Path, *, timeout: int = 90) -> bool
     with tempfile.TemporaryDirectory(prefix="edu_docx_refresh_") as tmp:
         profile_dir = (Path(tmp) / ".lo_profile").resolve()
         profile_dir.mkdir(parents=True, exist_ok=True)
-        port = _find_free_local_port()
+        try:
+            port = _find_free_local_port()
+        except OSError:
+            return False
         accept = f"socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext"
         cmd = [
             soffice,
@@ -622,7 +660,7 @@ def _add_brand_footer(doc: DocxDocument, font_name: str = DEFAULT_FONT) -> None:
         fp = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
         fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = fp.add_run(_BRAND_FOOTER)
-        run.font.name = font_name
+        _set_run_font(run, font_name)
         run.font.size = Pt(8)
         run.font.color.rgb = RGBColor(0x9E, 0xA3, 0xAF)  # slate-400
 

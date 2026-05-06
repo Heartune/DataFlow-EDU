@@ -191,6 +191,24 @@ DataFlow-EDU/
    - 启动 WebUI 看板：` npm run dev`，浏览器访问前端（如 http://localhost:5173）查看各阶段节点状态。
    - 生成与均衡结果在 `dataflow_edu/data/generation_and_balancing/`，执行与评判结果在 `dataflow_edu/data/execute_and_judge/`。
 
+## PDF 导出字体
+
+Word 导出会在 docx 中写入 `微软雅黑`。PDF 导出会先生成 docx，再由 LibreOffice
+headless 转换成 PDF，因此最终 PDF 字体取决于运行 LibreOffice 的系统/容器是否能
+通过 fontconfig 找到该字体。
+
+如果部署环境需要嵌入真正的微软雅黑，请在构建 worker 镜像前，把合法授权的字体文件
+放入 `deploy/fonts/`，常见文件名包括 `msyh.ttc`、`msyhbd.ttc`、`msyhl.ttc`，然后重建：
+
+```bash
+docker compose build worker
+docker compose up -d worker
+```
+
+如果未提供真实微软雅黑，Docker 镜像会把 `微软雅黑` / `Microsoft YaHei` 映射到已安装
+的中文黑体兜底字体，避免 LibreOffice 转 PDF 时回落到 DejaVu Sans 这类非中文字体。
+这能保证中文显示稳定，但不是严格意义上的 Microsoft YaHei。
+
 ---
 
 ## TODO
