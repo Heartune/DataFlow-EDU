@@ -307,17 +307,15 @@ def _add_question_answer(
 ) -> None:
     """渲染单题的答案+解析。
 
-    `include_question_repeat=True` 时（学生卷答案区），先重复一行题号 + 题干截断，
+    `include_question_repeat=True` 时（学生卷答案区），先重复一行题号 + 完整题干，
     便于学生对照；with_answer 卷正文已经有题干，无需重复。
     """
 
     if include_question_repeat:
         head = doc.add_paragraph()
         head.add_run(f"{label}. ").bold = True
-        snippet = (rec.question or "").strip().replace("\n", " ")
-        if len(snippet) > 60:
-            snippet = snippet[:60] + "…"
-        head.add_run(snippet)
+        question_text = (rec.question or "").strip().replace("\n", " ")
+        head.add_run(question_text)
 
     if rec.answer:
         p = doc.add_paragraph()
