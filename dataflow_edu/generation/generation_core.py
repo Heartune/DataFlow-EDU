@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import pandas as pd
-from tqdm import tqdm
+from dataflow_edu._compat.tqdm import tqdm
 
 from dataflow_edu.config.schema import (
     AbilityLevelItem,

@@ -8,7 +8,7 @@ import os
 from typing import List, Tuple
 
 from datasketch import MinHash, MinHashLSH
-from tqdm import tqdm
+from dataflow_edu._compat.tqdm import tqdm
 
 from dataflow import get_logger
 

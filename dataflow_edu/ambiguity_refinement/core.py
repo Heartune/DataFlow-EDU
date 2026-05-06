@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
-from tqdm import tqdm
+from dataflow_edu._compat.tqdm import tqdm
 
 from dataflow_edu.ambiguity_cleaning.core import _evaluate_ambiguity
 from dataflow_edu.serving import call_llm, get_api_delay

@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple
 
-from tqdm import tqdm
+from dataflow_edu._compat.tqdm import tqdm
 
 from dataflow_edu.serving import llm_client
 
@@ -181,5 +181,4 @@ def run_execute(
     print(f"成功: {success_count}/{len(pending_indices)} ({success_count / len(pending_indices) * 100:.1f}%)")
     print(f"耗时: {elapsed:.2f}s")
     return True, output_path
-
 

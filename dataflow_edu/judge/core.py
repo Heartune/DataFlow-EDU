@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from typing import List, Tuple
 
-from tqdm import tqdm
+from dataflow_edu._compat.tqdm import tqdm
 
 from dataflow_edu.judge.llm_prompts import build_scoring_prompt
 from dataflow_edu.judge.llm_scoring import (

@@ -14,7 +14,7 @@ import unicodedata
 from pathlib import Path
 
 from openai import OpenAI
-from tqdm import tqdm
+from dataflow_edu._compat.tqdm import tqdm
 
 
 def _display_width(s: str) -> int:

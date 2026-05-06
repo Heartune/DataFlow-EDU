@@ -18,6 +18,7 @@ import argparse
 import builtins
 import json
 import os
+import shutil
 import sys
 import time
 import traceback
@@ -344,7 +345,7 @@ def _override_config_paths(config, task_dir: str, disabled_stages: "set[str] | N
         ("3.3 考察领域检查", "domain_cleaning",      "domain_clean"),
         ("3.4 考察领域修正", "domain_refinement",    "domain_refine"),
         ("3.5 去除重复题目", "deduplication",        "dedup"),
-        ("3.6 题库增强",     "synthesis",            "synthesis"),
+        ("3.6 解析生成",     "synthesis",            "synthesis"),
         ("3.7 多语言翻译",   "translation",          "translation"),
         ("3.8 选择题格式检查", "mcq_verify",         "mcq_verify"),
     ]
@@ -381,10 +382,20 @@ STAGES: list[tuple[str, str | None]] = [
     ("3.3 考察领域检查", "run_domain_cleaning"),
     ("3.4 考察领域修正", "run_domain_refinement"),
     ("3.5 去除重复题目", "run_deduplication"),
-    ("3.6 题库增强", "run_synthesis"),
+    ("3.6 解析生成", "run_synthesis"),
     ("3.7 多语言翻译", "run_translation"),
     ("3.8 选择题格式检查", "run_mcq_verify"),
 ]
+
+_STAGE_NAME_ALIASES = {
+    "3.6 题库增强": "3.6 解析生成",
+}
+
+
+def _normalize_stage_name(name: object) -> str | None:
+    if not isinstance(name, str):
+        return None
+    return _STAGE_NAME_ALIASES.get(name, name)
 
 
 # 阶段产出"判定文件" glob（相对 task_dir）。跑完阶段后必须至少匹配 1 个文件，
@@ -401,7 +412,7 @@ _STAGE_SENTINELS: dict[str, str | None] = {
     "3.3 考察领域检查": "3_3_domain_cleaned/*_domain_cleaned.json",
     "3.4 考察领域修正": "3_4_domain_refined/*_domain_refined.json",
     "3.5 去除重复题目": "3_5_deduplicated/*_deduplicated.json",
-    "3.6 题库增强": "3_6_synthesized/*_synthesized.json",
+    "3.6 解析生成": "3_6_synthesized/*_synthesized.json",
     "3.7 多语言翻译": "3_7_translated/*_translated.json",
     "3.8 选择题格式检查": "3_8_mcq_verified/*_mcq_verified.json",
 }
@@ -422,7 +433,7 @@ _STAGE_OUTPUT_DIRS: dict[str, list[str]] = {
     "3.3 考察领域检查": ["3_3_domain_cleaned"],
     "3.4 考察领域修正": ["3_4_domain_refined"],
     "3.5 去除重复题目": ["3_5_deduplicated"],
-    "3.6 题库增强": ["3_6_synthesized"],
+    "3.6 解析生成": ["3_6_synthesized"],
     "3.7 多语言翻译": ["3_7_translated"],
     "3.8 选择题格式检查": ["3_8_mcq_verified"],
 }
@@ -491,7 +502,7 @@ def _load_preserved_states(task_dir: str, resume_from: str) -> dict[str, dict]:
         cutoff_idx = len(stage_order)
     preserved: dict[str, dict] = {}
     for s in old.get("stages", []) or []:
-        name = s.get("name")
+        name = _normalize_stage_name(s.get("name"))
         if not name or s.get("status") != "succeeded":
             continue
         if name not in stage_order:
@@ -512,6 +523,9 @@ def _pdf_to_images(task_name: str, task_dir: str, input_pdf: str, dpi: int = 100
     """
     from pdf2image import convert_from_path
 
+    if not os.path.isfile(input_pdf):
+        raise FileNotFoundError(f"input PDF not found: {input_pdf}")
+
     img_dir = _abs_under(task_dir, _LAYOUT["img_dir"])
     book_dir = os.path.join(img_dir, task_name)
     os.makedirs(book_dir, exist_ok=True)
@@ -527,11 +541,24 @@ def _pdf_to_images(task_name: str, task_dir: str, input_pdf: str, dpi: int = 100
         print(f"[pdf->img] 警告：POPPLER_PATH 不是目录：{poppler_path}", flush=True)
         poppler_path = ""
 
+    pdfinfo_path = os.path.join(poppler_path, "pdfinfo") if poppler_path else shutil.which("pdfinfo")
+    if not pdfinfo_path or not os.path.isfile(pdfinfo_path):
+        raise RuntimeError(
+            "Poppler pdfinfo not found. "
+            f"PATH={os.getenv('PATH', '')!r}; POPPLER_PATH={os.getenv('POPPLER_PATH', '')!r}. "
+            "Docker 部署请重建 worker 镜像；宿主机裸跑请安装 poppler-utils，"
+            "或把 POPPLER_PATH 指向包含 pdfinfo 的目录。"
+        )
+
     kwargs: dict = {"dpi": dpi}
     if poppler_path:
         kwargs["poppler_path"] = poppler_path
 
-    print(f"[pdf->img] 转换 {input_pdf} -> {book_dir} (dpi={dpi}, poppler={poppler_path or 'PATH'})", flush=True)
+    print(
+        f"[pdf->img] 转换 {input_pdf} -> {book_dir} "
+        f"(dpi={dpi}, poppler={poppler_path or 'PATH'}, pdfinfo={pdfinfo_path})",
+        flush=True,
+    )
     images = convert_from_path(input_pdf, **kwargs)
     total = len(images)
     width = max(3, len(str(total)))
@@ -739,7 +766,11 @@ def main() -> int:
                 _raw_cfg = _yaml_mod.safe_load(_f) or {}
             if isinstance(_raw_cfg.get("enabled_stages"), list):
                 _all_optional = {s[0] for s in STAGES} - _MANDATORY
-                _enabled_set = {n for n in _raw_cfg["enabled_stages"] if isinstance(n, str)}
+                _enabled_set = {
+                    normalized
+                    for n in _raw_cfg["enabled_stages"]
+                    if (normalized := _normalize_stage_name(n)) in _all_optional
+                }
                 _disabled_stages = _all_optional - _enabled_set
                 if _disabled_stages:
                     print(
@@ -750,7 +781,7 @@ def main() -> int:
             print(f"[runner] 读取 enabled_stages 失败 ({_e})，所有步骤全部执行", flush=True)
 
     # --reset 与 --resume-from 互斥；--reset 优先生效
-    resume_from = (args.resume_from or "").strip()
+    resume_from = _normalize_stage_name((args.resume_from or "").strip()) or ""
     if args.reset:
         if resume_from:
             print("[runner] --reset 与 --resume-from 同时提供，忽略 --resume-from", flush=True)
