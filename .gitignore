@@ -4,6 +4,10 @@ agent_notes.md
 CHANGELOG.md
 tracked_files.tmp
 
+# ===== 本地 AI/自动化工具缓存与中间文件 =====
+.baoyu-skills/
+slide-deck/**/batch.json
+
 # ===== 环境变量与 API Key（务必全部忽略，含子目录）=====
 .env
 .env.*

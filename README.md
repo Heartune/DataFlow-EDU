@@ -131,41 +131,49 @@ Pipeline 看板（Vue 3 + Node.js）位于 `webui/`。启动方式：`cd webui &
 ```
 DataFlow-EDU/
 ├── README.md
-├── .llm_config.json          # LLM 配置（需自行创建）
-├── dataflow_edu/             # 主管线与算子包
-│   ├── edu_data_pipeline.py  # 命令行交互式入口
-│   ├── config/               # 配置加载、校验、CLI 管理
-│   │   ├── edu_config.yaml
-│   │   ├── loader.py, schema.py, validator.py
-│   │   ├── manager_cli.py
-│   │   └── presets/
-│   ├── operators/            # 各阶段算子
-│   │   ├── mineru_ocr_operator.py
-│   │   ├── generation_operator.py, balancing_operator.py
-│   │   ├── ambiguity_cleaning_operator.py, ambiguity_refinement_operator.py
-│   │   ├── domain_cleaning_operator.py, domain_refinement_operator.py
-│   │   ├── deduplication_operator.py
-│   │   ├── execute_operator.py, judge_operator.py
-│   │   └── ...
-│   ├── pipelines/            # 生成、MinerU 等管线
-│   ├── serving/              # 通用 LLM 客户端
-│   ├── judge/, execute/      # 评判与执行逻辑
-│   ├── balancing/, generation/
-│   ├── ambiguity_cleaning/, ambiguity_refinement/
-│   ├── domain_cleaning/, domain_refinement/, deduplication/
-│   └── data/                 # 管线产出数据
-│       ├── generation_and_balancing/
-│       ├── cleaning_and_refinement/
-│       └── execute_and_judge/
-├── webui/                    # Vue3 + Node 看板
-│   ├── frontend/             # 前端 (Vite, Vue, Pinia)
-│   │   └── src/
-│   │       ├── views/, components/, stores/, api/, types/
-│   │       └── App.vue
-│   ├── server/               # 后端 API
-│   │   └── src/
+├── docker-compose.yml        # 单机生产部署：worker + web + backup
+├── Dockerfile.python         # worker 镜像：Node API + Python Pipeline
+├── Dockerfile.web            # Nginx 前端静态服务镜像
+├── requirements-cloud.txt    # 云端/容器 Python 依赖
+├── .env                      # 本地环境变量，含密钥；需自行创建，不入库
+├── .llm_config.json          # CLI 模式 LLM 配置；需自行创建，不入库
+├── DataFlow/                 # 本地 DataFlow 框架源码，提供 OperatorABC、Registry 等
+├── dataflow_edu/             # 教育题库生成主管线与算子包
+│   ├── edu_data_pipeline.py  # 命令行交互式 Pipeline 入口
+│   ├── task_runner.py        # WebUI 非交互式任务 Runner，写入 progress.json
+│   ├── config/               # Schema、配置加载/校验、全局配置与初高中多学科 presets
+│   ├── operators/            # DataFlow Operator 封装与 OPERATOR_REGISTRY 注册
+│   ├── pipelines/            # MinerU OCR、题目生成等阶段 Pipeline 包装
+│   ├── generation/           # 两阶段生成核心逻辑与分学科 prompt 模板
+│   ├── balancing/            # 能力层级与题型分布均衡补题
+│   ├── ambiguity_cleaning/   # 题意二义性评分与低质题剔除
+│   ├── ambiguity_refinement/ # 二义性题目精修与重评
+│   ├── domain_cleaning/      # 学科领域相关性评分与清洗
+│   ├── domain_refinement/    # 领域相关性精修与重评
+│   ├── deduplication/        # MinHash + LSH 题干去重
+│   ├── synthesis/            # 基于题目与答案生成解析 explanation
+│   ├── translation/          # 中英法多语言题目/答案/解析翻译
+│   ├── mcq_verify/           # 选择题选项与答案结构校验/修复
+│   ├── execute/, judge/      # 接入待测模型作答与 LLM-as-a-Judge 评分
+│   ├── competency_suggest/   # 联网生成知识体系、题型、核心素养配置建议
+│   ├── serving/              # 多 Provider LLM 客户端与联网搜索 LLM 客户端
+│   ├── export/               # JSON / Word / PDF 试卷导出
+│   └── data/                 # 教材资源、示例产物与多用户任务运行目录
+├── webui/                    # 教师端与管理端 Web 应用
+│   ├── frontend/             # Vue 3 + Vite + Pinia 前端
+│   │   ├── src/              # 路由、页面、组件、stores、API client
+│   │   ├── public/           # 静态品牌资源
+│   │   └── dist/             # 当前生产构建产物
+│   ├── server/               # Node.js/Express API 服务
+│   │   └── src/              # auth、tasks、export、share、admin、folders 等路由
+│   ├── img_intro/            # README/WebUI 介绍截图
 │   └── README.md
-└── slide-deck/dataflow-edu/  # 演示文稿与配图
+├── deploy/                   # 部署辅助资源，如 PDF 导出字体说明
+├── scripts/                  # 运维脚本，如 SQLite 备份
+├── tests/                    # DataFlow-EDU 单元测试
+├── slide-deck/dataflow-edu/  # 项目介绍 slide 源文件、提示词与导出成品
+├── utils_from_CNLaw-Bench/   # 历史项目迁移工具，仅保留必要轻量脚本
+└── utils_from_ROBOTheory/    # 历史项目迁移工具，本地参考为主
 ```
 
 ---
