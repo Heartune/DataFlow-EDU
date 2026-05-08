@@ -2,17 +2,6 @@
 
 > From One to Infinity 🌈
 
-> Github Repo: <link>https://github.com/Heartune/DataFlow-EDU</link>
-
-> 教师友好 Web 入口（M1 本地开发版）：
-> 1. `cd webui/server && cp .env.example .env`（按需改 `JWT_SECRET / ADMIN_*`），`npm install && npm run dev`
-> 2. `cd webui/frontend && npm install && npm run dev`，浏览器访问 Vite 输出的地址（默认 http://127.0.0.1:5173 ）
-> 3. 注册账号 → 新建任务 → 上传教材 PDF → 填 BYOK key → 实时观察阶段进度。所有产物落 `dataflow_edu/data/users/<uid>/<task_id>/`。
-
-## 核心定位说明
-
-基于我在包含7.9万条语料的机器人理论语料库ROBOTheory-79k、规模1.6T网络安全专业语料库CyberSecCorpus、电子信息学科数据集EE-Bench、中国法律大模型评测基准CNLaw-Bench方面的丰富构建经验，我的核心目标是打造 **DataFlow-EDU**——一条高度自动化、算子化且具备通用性的「学科数据集与评测基准（Benchmark）」生产管线。该管线贯穿从「原始教材输入」到「高质量结构化题库输出」的全生命周期。它不仅包含基于 MinerU 的多模态文档解析、切片式题库生成与题型动态均衡模块，更深度融入了目标团队 DataFlow 的算子化清洗哲学。通过灵活串联条件过滤、领域对齐 与基于 Question Verify 的 LLM-as-a-Judge 多维能力审阅等定制化算子，最终实现自动化、批量化地生产低幻觉、高质量、均衡分布的学科评测集与训练语料，成为赋能各类学科大模型能力跃升的基础设施。这套系统支持包括教材在内的任意PDF教学资源输入，这里我将以一本高中生物必修一教材（PDF格式）作为资源，进行项目demo演示。
-
 ---
 
 ## 📖 Introducing DataFlow-EDU
@@ -21,59 +10,39 @@
 
 ---
 
-![](slide-deck/dataflow-edu/02-slide-motivation.png)
+![](slide-deck/dataflow-edu/02-slide-problem-context.png)
 
 ---
 
-![](slide-deck/dataflow-edu/03-slide-project-scope.png)
+![](slide-deck/dataflow-edu/03-slide-project-positioning.png)
 
 ---
 
-![](slide-deck/dataflow-edu/04-slide-architecture.png)
+![](slide-deck/dataflow-edu/04-slide-system-architecture.png)
 
 ---
 
-![](slide-deck/dataflow-edu/05-slide-taxonomy-config.png)
+![](slide-deck/dataflow-edu/05-slide-pipeline-stages.png)
 
 ---
 
-![](slide-deck/dataflow-edu/06-slide-mineru-ocr.png)
+![](slide-deck/dataflow-edu/06-slide-operator-system.png)
 
 ---
 
-![](slide-deck/dataflow-edu/07-slide-generation.png)
+![](slide-deck/dataflow-edu/07-slide-quality-control.png)
 
 ---
 
-![](slide-deck/dataflow-edu/08-slide-balancing.png)
+![](slide-deck/dataflow-edu/08-slide-teacher-webui.png)
 
 ---
 
-![](slide-deck/dataflow-edu/09-slide-cleaning-pipeline.png)
+![](slide-deck/dataflow-edu/09-slide-product-maturity.png)
 
 ---
 
-![](slide-deck/dataflow-edu/10-slide-llm-judge-cleaning.png)
-
----
-
-![](slide-deck/dataflow-edu/11-slide-execute-judge.png)
-
----
-
-![](slide-deck/dataflow-edu/12-slide-webui.png)
-
----
-
-![](slide-deck/dataflow-edu/13-slide-prior-work.png)
-
----
-
-![](slide-deck/dataflow-edu/14-slide-dataflow-integration.png)
-
----
-
-![](slide-deck/dataflow-edu/15-slide-back-cover.png)
+![](slide-deck/dataflow-edu/10-slide-back-cover.png)
 
 ---
 
@@ -86,43 +55,6 @@
    <img alt="Star History Chart" src="https://api.star-history.com/image?repos=Heartune/DataFlow-EDU&type=date&legend=top-left" />
  </picture>
 </a>
-
----
-
-## DataFlow-EDU 方案设计图景
-
-我将这套 Workflow 映射到 DataFlow 的算子化 Operator 和管线化 Pipeline 架构中。
-
-注意，所有算子都要是命令行交互式的，如果当前要实现的算子的参考代码不是交互式的，那么要参考前面已经实现的算子的相关代码，进行设计。我的pipeline不是那种全自动的，是半自动的，人工的监控、管理和介入是必要的。
-
-整体有一个edu_data_pipeline.py，里面是对各个operator的调用，通过命令行交互式，用户可以选择执行哪个算子，即执行Workflow的哪个步骤。
-
-项目应使用本地的 DataFlow 包（包含 get_logger、OperatorABC、OPERATOR_REGISTRY 等）。相关代码应将本地 DataFlow 加入 sys.path。
-
-涉及 LLM 交互的部分，可复用 `dataflow_edu.serving.llm_client`。该模块位于 `dataflow_edu/serving/` 目录下，作为通用 LLM 客户端，被需要它的算子共用。配置保存于项目根目录的 `.llm_config.json`。
-
-
-### 其他工具
-
-对于CNLawbench和ROBOTheory两个项目产出的json转excel、excel转jsonl这些工具脚本，整理放在utils文件夹下。
-
-### WebUI
-
-Pipeline 看板（Vue 3 + Node.js）位于 `webui/`。启动方式：`cd webui && npm install && npm run dev`。
-
-![](webui/img_intro/PixPin_2026-03-15_11-36-15.png)
-
----
-
-![](webui/img_intro/PixPin_2026-03-15_11-36-34.png)
-
----
-
-![](webui/img_intro/PixPin_2026-03-15_11-37-26.png)
-
----
-
-![](webui/img_intro/PixPin_2026-03-15_11-41-24.png)
 
 ---
 
@@ -180,6 +112,8 @@ DataFlow-EDU/
 
 ## Quick Start
 
+> 若要直接访问官网，请在浏览器中访问www.dataflow-edu.site.
+
 1. **环境与依赖**
    - 确保项目根目录下的 `DataFlow` 目录存在（管线会通过 `sys.path` 使用本地 DataFlow 包）。
    - 在 `DataFlow`目录下运行 `pip install -e .`通过源码编译方式安装 DataFlow.
@@ -199,30 +133,10 @@ DataFlow-EDU/
    - 启动 WebUI 看板：` npm run dev`，浏览器访问前端（如 http://localhost:5173）查看各阶段节点状态。
    - 生成与均衡结果在 `dataflow_edu/data/generation_and_balancing/`，执行与评判结果在 `dataflow_edu/data/execute_and_judge/`。
 
-## PDF 导出字体
-
-Word 导出会在 docx 中写入 `微软雅黑`。PDF 导出会先生成 docx，再由 LibreOffice
-headless 转换成 PDF，因此最终 PDF 字体取决于运行 LibreOffice 的系统/容器是否能
-通过 fontconfig 找到该字体。
-
-如果部署环境需要嵌入真正的微软雅黑，请在构建 worker 镜像前，把合法授权的字体文件
-放入 `deploy/fonts/`，常见文件名包括 `msyh.ttc`、`msyhbd.ttc`、`msyhl.ttc`，然后重建：
-
-```bash
-docker compose build worker
-docker compose up -d worker
-```
-
-如果未提供真实微软雅黑，Docker 镜像会把 `微软雅黑` / `Microsoft YaHei` 映射到已安装
-的中文黑体兜底字体，避免 LibreOffice 转 PDF 时回落到 DejaVu Sans 这类非中文字体。
-这能保证中文显示稳定，但不是严格意义上的 Microsoft YaHei。
-
 ---
 
 ## TODO
-- [ ] plan.md 中的计划
-- [ ] 合并 1.1 和 1.2，直接解析 pdf，而非将 pdf 转为 image
-- [ ] 平民化 webui 设计，完善参数配置自由度，开发拖动控件和实时进度预览
+- [x] plan.md 中的计划
 - [x] 贴合初高中多学科教育核心素养，如果没有适配领域，要调用能联网搜索的 LLM 给出建议，并支持修改或完全用户自定义（已通过 `CompetencySuggestOperator` + `POST /api/competency/suggest` + WizardView 第 2 步「联网建议」按钮实现）
 
 ```
