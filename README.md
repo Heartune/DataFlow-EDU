@@ -6,43 +6,43 @@
 
 ## 📖 Introducing DataFlow-EDU
 
-![](slide-deck/dataflow-edu/01-slide-cover.png)
+![](slide-deck/dataflow-edu/01-slide-cover.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/02-slide-problem-context.png)
+![](slide-deck/dataflow-edu/02-slide-problem-context.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/03-slide-project-positioning.png)
+![](slide-deck/dataflow-edu/03-slide-project-positioning.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/04-slide-system-architecture.png)
+![](slide-deck/dataflow-edu/04-slide-system-architecture.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/05-slide-pipeline-stages.png)
+![](slide-deck/dataflow-edu/05-slide-pipeline-stages.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/06-slide-operator-system.png)
+![](slide-deck/dataflow-edu/06-slide-operator-system.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/07-slide-quality-control.png)
+![](slide-deck/dataflow-edu/07-slide-quality-control.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/08-slide-teacher-webui.png)
+![](slide-deck/dataflow-edu/08-slide-teacher-webui.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/09-slide-product-maturity.png)
+![](slide-deck/dataflow-edu/09-slide-product-maturity.webp)
 
 ---
 
-![](slide-deck/dataflow-edu/10-slide-back-cover.png)
+![](slide-deck/dataflow-edu/10-slide-back-cover.webp)
 
 ---
 
